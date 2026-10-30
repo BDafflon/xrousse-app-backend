@@ -1,5 +1,39 @@
 import xml.etree.ElementTree as ET
 
+from app.config import get_settings
+from app.models.event import Event, EventStatus
+
+
+def test_rss_feed_channel_link_matches_configured_site_url(client, redacteur_token):
+    response = client.get("/rss.xml")
+    root = ET.fromstring(response.content)
+    assert root.findtext("./channel/link") == get_settings().site_url
+
+
+def test_rss_feed_orders_dated_events_before_undated_events(client, session, redacteur_token):
+    # The /publish endpoint requires both titre and date, so a published event with a
+    # NULL date can't be produced through the API. Insert it directly to exercise the
+    # NULLS LAST ordering regardless of underlying database engine behavior.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    dated = client.post("/backoffice/events", json={
+        "source_url": "https://example.com/g5", "titre": "Avec date", "date": "2026-11-20T10:00:00"
+    }, headers=headers)
+    client.post(f"/backoffice/events/{dated.json()['id']}/publish", headers=headers)
+
+    session.add(Event(
+        source_url="https://example.com/g6",
+        titre="Sans date",
+        date=None,
+        statut=EventStatus.publie,
+        created_by_id=dated.json()["created_by_id"],
+    ))
+    session.commit()
+
+    response = client.get("/rss.xml")
+    root = ET.fromstring(response.content)
+    titles = [item.findtext("title") for item in root.findall("./channel/item")]
+    assert titles.index("Avec date") < titles.index("Sans date")
+
 
 def test_rss_feed_contains_published_event(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}

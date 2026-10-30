@@ -13,6 +13,6 @@ def rss_feed(session: Session = Depends(get_session)) -> Response:
     events = session.exec(
         select(Event)
         .where(Event.statut == EventStatus.publie)
-        .order_by(Event.date.desc())
+        .order_by(Event.date.desc().nulls_last())
     ).all()
     return Response(content=build_feed(list(events)), media_type="application/rss+xml")

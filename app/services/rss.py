@@ -3,11 +3,11 @@ from datetime import datetime
 from email.utils import format_datetime
 from zoneinfo import ZoneInfo
 
+from app.config import get_settings
 from app.models.event import Event
 
 _LOCAL_TZ = ZoneInfo("Europe/Paris")
 _FEED_TITLE = "Reco Croix-Rousse"
-_FEED_LINK = "https://example.com"
 _FEED_DESCRIPTION = "Événements recommandés dans le quartier de la Croix-Rousse"
 
 
@@ -17,11 +17,13 @@ def _to_rfc822(value: datetime) -> str:
     return format_datetime(aware)
 
 
-def build_feed(events: list[Event]) -> str:
+def build_feed(events: list[Event], site_url: str | None = None) -> str:
+    if site_url is None:
+        site_url = get_settings().site_url
     rss = ET.Element("rss", version="2.0")
     channel = ET.SubElement(rss, "channel")
     ET.SubElement(channel, "title").text = _FEED_TITLE
-    ET.SubElement(channel, "link").text = _FEED_LINK
+    ET.SubElement(channel, "link").text = site_url
     ET.SubElement(channel, "description").text = _FEED_DESCRIPTION
 
     for event in events:

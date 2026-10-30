@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     resend_api_key: str
     resend_from_email: str
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+    site_url: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
