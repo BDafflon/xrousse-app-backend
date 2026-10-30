@@ -9,6 +9,7 @@ from app.routers.events_public import router as events_public_router
 from app.routers.rss import router as rss_router
 from app.routers.subscriptions import router as subscriptions_router
 from app.routers.tags import router as tags_router
+from app.routers.users import router as users_router
 
 app = FastAPI()
 
@@ -29,6 +30,7 @@ app.include_router(events_public_router)
 app.include_router(drafts_router)
 app.include_router(rss_router)
 app.include_router(subscriptions_router)
+app.include_router(users_router)
 
 
 @app.get("/health")

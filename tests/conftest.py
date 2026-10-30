@@ -76,6 +76,31 @@ def lecteur_token_fixture(session):
     return create_access_token(user)
 
 
+@pytest.fixture(name="admin_user_id")
+def admin_user_id_fixture(session):
+    from app.models.user import Role, User
+
+    user = User(
+        email="admin@test.com",
+        password_hash="irrelevant",
+        role=Role.admin,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    return user.id
+
+
+@pytest.fixture(name="admin_token")
+def admin_token_fixture(session, admin_user_id):
+    from app.auth.security import create_access_token
+    from app.models.user import User
+
+    user = session.get(User, admin_user_id)
+    return create_access_token(user)
+
+
 @pytest.fixture(name="other_lecteur_token")
 def other_lecteur_token_fixture(session):
     from app.auth.security import create_access_token
