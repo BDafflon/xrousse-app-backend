@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.db import get_session
+from app.seed_tags import seed as seed_tags
 
 
 @pytest.fixture(name="session")
@@ -23,6 +24,7 @@ def session_fixture():
     )
     SQLModel.metadata.create_all(test_engine)
     with Session(test_engine) as session:
+        seed_tags(session)
         yield session
     SQLModel.metadata.drop_all(test_engine)
 
@@ -38,3 +40,20 @@ def client_fixture(session):
         yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(name="redacteur_token")
+def redacteur_token_fixture(session):
+    from app.auth.security import create_access_token
+    from app.models.user import Role, User
+
+    user = User(
+        email="redacteur@test.com",
+        password_hash="irrelevant",
+        role=Role.redacteur,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    return create_access_token(user)

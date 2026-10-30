@@ -8,6 +8,7 @@ from app.config import get_settings
 
 # --- model imports (append-friendly: each task adds its import here) ---
 from app.models.user import User  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
 # -------------------------------------------------------------------------
 
 target_metadata = SQLModel.metadata
