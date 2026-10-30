@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from app.models.event import Event, EventStatus
 from app.models.subscription import AlertMode, Subscription
 from app.models.tag import Tag
@@ -19,14 +21,15 @@ def _make_tag(session):
     return session.exec(select(Tag)).first()
 
 
-def _make_published_event_with_tag(session, tag, created_by_id):
+def _make_published_event_with_tag(session, tag, created_by_id, date=None, titre="Vide grenier"):
     event = Event(
-        titre="Vide grenier",
+        titre=titre,
         description="desc",
-        source_url="https://example.com/digest-event",
+        source_url=f"https://example.com/digest-event-{titre}",
         statut=EventStatus.publie,
         created_by_id=created_by_id,
         tags=[tag],
+        date=date,
     )
     session.add(event)
     session.commit()
@@ -138,6 +141,40 @@ def test_send_digest_for_day_skips_other_days(session, monkeypatch):
     send_digest_for_day(0, session)
 
     assert sent == []
+
+
+def test_send_digest_for_day_since_filters_out_older_events(session, monkeypatch):
+    sent = []
+    monkeypatch.setattr(
+        "app.services.alerts.send_email",
+        lambda to, subject, html: sent.append((to, subject, html)),
+    )
+
+    lecteur_user = _make_user(session)
+    tag = _make_tag(session)
+    since = datetime(2026, 1, 15)
+    _make_published_event_with_tag(
+        session,
+        tag,
+        lecteur_user.id,
+        date=since - timedelta(days=5),
+        titre="Ancien evenement",
+    )
+    _make_published_event_with_tag(
+        session,
+        tag,
+        lecteur_user.id,
+        date=since + timedelta(days=5),
+        titre="Nouvel evenement",
+    )
+    create_subscription(session, user=lecteur_user, tag=tag, mode="resume", resume_day=0)
+
+    send_digest_for_day(0, session, since=since)
+
+    assert len(sent) == 1
+    _, _, html = sent[0]
+    assert "Nouvel evenement" in html
+    assert "Ancien evenement" not in html
 
 
 def test_send_email_failure_does_not_raise(monkeypatch):

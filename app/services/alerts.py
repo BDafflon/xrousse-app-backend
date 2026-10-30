@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime
 
 from sqlmodel import Session, select
 
@@ -45,10 +46,18 @@ def trigger_immediate_alerts(event: Event, session: Session) -> None:
         send_email(user.email, subject, html)
 
 
-def send_digest_for_day(day: int, session: Session) -> None:
+def send_digest_for_day(
+    day: int, session: Session, since: datetime | None = None
+) -> None:
     """Build and send one digest email per user for every `resume`
     subscription whose `resume_day` matches `day`. The digest lists
     published events matching the user's subscribed tags.
+
+    `since`, when given, restricts the digest to events whose `Event.date`
+    is on or after that timestamp — the hook a future weekly-cron caller
+    uses to send only newly-relevant events instead of resending every
+    historical match on every run. Left as `None` (the default) this
+    preserves the previous unbounded behavior.
 
     Scheduling (cron) for calling this periodically is explicitly out of
     scope for this task; only the callable itself is provided.
@@ -73,9 +82,10 @@ def send_digest_for_day(day: int, session: Session) -> None:
         if user is None:
             continue
 
-        events = session.exec(
-            select(Event).where(Event.statut == EventStatus.publie)
-        ).all()
+        query = select(Event).where(Event.statut == EventStatus.publie)
+        if since is not None:
+            query = query.where(Event.date >= since)
+        events = session.exec(query).all()
         matching_events = [
             event
             for event in events
