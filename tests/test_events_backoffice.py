@@ -108,3 +108,21 @@ def test_create_event_with_tags(client, redacteur_token):
 def test_create_event_unauthenticated(client):
     response = client.post("/backoffice/events", json={"source_url": "https://example.com/e9"})
     assert response.status_code == 401
+
+
+def test_create_event_rejects_timezone_aware_date(client, redacteur_token):
+    # Event.date is typed NaiveDatetime, which rejects tz-aware ISO strings outright
+    # (422) rather than silently accepting/normalizing the offset. This test pins
+    # that behavior so a future change (e.g. switching to plain `datetime`) that
+    # silently accepts aware timestamps would be caught as a regression.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/e10",
+            "titre": "Vide grenier",
+            "date": "2026-11-15T10:00:00+01:00",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422

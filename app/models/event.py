@@ -23,6 +23,17 @@ class Event(SQLModel, table=True):
     titre: str | None = Field(default=None)
     description: str | None = Field(default=None)
     source_url: str = Field(unique=True, index=True)
+    # NaiveDatetime intentionally REJECTS timezone-aware input (e.g. a client sending
+    # "...+01:00" gets a 422), rather than silently normalizing/stripping the offset.
+    # NOTE: this annotation alone only protects construction paths that run Pydantic
+    # validation (e.g. `Event.model_validate(...)`); SQLModel table models do NOT
+    # re-validate on plain `Event(date=...)` / attribute assignment, so the actual
+    # enforcement point is `EventCreate.date` / `EventUpdate.date` in
+    # app/schemas/event.py, which are also typed `NaiveDatetime` to reject aware
+    # input at the API boundary before it ever reaches this model. If a future
+    # frontend needs to send tz-aware ISO datetimes, either strip the offset
+    # client-side before posting, or switch both this field and the schemas to
+    # `datetime` and explicitly normalize (e.g. convert to UTC then drop tzinfo).
     date: NaiveDatetime | None = Field(default=None)
     lieu: str | None = Field(default=None)
     image_url: str | None = Field(default=None)

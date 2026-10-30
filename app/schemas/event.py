@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, NaiveDatetime
 
 from app.models.event import EventStatus
 from app.schemas.tag import TagOut
@@ -10,7 +10,11 @@ class EventCreate(BaseModel):
     titre: str | None = None
     description: str | None = None
     source_url: str
-    date: datetime | None = None
+    # NaiveDatetime (matches Event.date): rejects tz-aware input with a 422 at the
+    # API boundary instead of silently accepting an offset that the Event table
+    # model's own NaiveDatetime typing would not otherwise enforce (SQLModel table
+    # models skip Pydantic validation on plain __init__/attribute assignment).
+    date: NaiveDatetime | None = None
     lieu: str | None = None
     image_url: str | None = None
     tag_ids: list[int] = []
@@ -19,7 +23,7 @@ class EventCreate(BaseModel):
 class EventUpdate(BaseModel):
     titre: str | None = None
     description: str | None = None
-    date: datetime | None = None
+    date: NaiveDatetime | None = None
     lieu: str | None = None
     image_url: str | None = None
     tag_ids: list[int] | None = None

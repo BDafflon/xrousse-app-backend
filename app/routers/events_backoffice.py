@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
-from app.auth.dependencies import require_role
+from app.auth.dependencies import get_current_user, require_role
 from app.db import get_session
 from app.models.event import Event, EventStatus
 from app.models.tag import Tag
@@ -50,7 +50,7 @@ def get_event(event_id: int, session: Session = Depends(get_session)) -> Event:
 @router.post("", response_model=EventOut, status_code=status.HTTP_201_CREATED)
 def create_event(
     data: EventCreate,
-    current_user: User = Depends(require_role(Role.admin, Role.redacteur)),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Event:
     tags = _resolve_tags(data.tag_ids, session)
