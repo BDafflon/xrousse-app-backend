@@ -1,0 +1,84 @@
+def test_upsert_creates_new_draft(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.post("/drafts/upsert", json={"source_url": "https://example.com/a"}, headers=headers)
+    assert response.status_code == 201
+    assert response.json()["statut"] == "brouillon"
+
+
+def test_upsert_resumes_existing_draft_by_source_url(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    first = client.post("/drafts/upsert", json={"source_url": "https://example.com/b"}, headers=headers)
+    second = client.post("/drafts/upsert", json={"source_url": "https://example.com/b"}, headers=headers)
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+
+
+def test_patch_title(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/c"}, headers=headers).json()
+    response = client.patch(f"/drafts/{draft['id']}/title", json={"titre": "Brocante du quartier"}, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["titre"] == "Brocante du quartier"
+
+
+def test_append_description_appends_not_replaces(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/d"}, headers=headers).json()
+    client.patch(f"/drafts/{draft['id']}/append-description", json={"text": "Premier paragraphe"}, headers=headers)
+    response = client.patch(f"/drafts/{draft['id']}/append-description", json={"text": "Deuxieme paragraphe"}, headers=headers)
+    assert "Premier paragraphe" in response.json()["description"]
+    assert "Deuxieme paragraphe" in response.json()["description"]
+
+
+def test_upsert_rejects_lecteur(client, lecteur_token):
+    headers = {"Authorization": f"Bearer {lecteur_token}"}
+    response = client.post("/drafts/upsert", json={"source_url": "https://example.com/z"}, headers=headers)
+    assert response.status_code == 403
+
+
+def test_upsert_unauthenticated(client):
+    response = client.post("/drafts/upsert", json={"source_url": "https://example.com/z2"})
+    assert response.status_code == 401
+
+
+def test_patch_title_404(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.patch("/drafts/9999/title", json={"titre": "x"}, headers=headers)
+    assert response.status_code == 404
+
+
+def test_append_description_first_call_no_leading_separator(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/e"}, headers=headers).json()
+    response = client.patch(f"/drafts/{draft['id']}/append-description", json={"text": "Seul paragraphe"}, headers=headers)
+    assert response.json()["description"] == "Seul paragraphe"
+
+
+def test_patch_source_updates_url(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/f1"}, headers=headers).json()
+    response = client.patch(
+        f"/drafts/{draft['id']}/source", json={"source_url": "https://example.com/f2"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["source_url"] == "https://example.com/f2"
+
+
+def test_patch_source_conflict_with_other_event(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft_a = client.post("/drafts/upsert", json={"source_url": "https://example.com/g1"}, headers=headers).json()
+    draft_b = client.post("/drafts/upsert", json={"source_url": "https://example.com/g2"}, headers=headers).json()
+    response = client.patch(
+        f"/drafts/{draft_b['id']}/source", json={"source_url": "https://example.com/g1"}, headers=headers
+    )
+    assert response.status_code == 409
+
+
+def test_patch_source_same_url_is_noop_not_conflict(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/h"}, headers=headers).json()
+    response = client.patch(
+        f"/drafts/{draft['id']}/source", json={"source_url": "https://example.com/h"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["source_url"] == "https://example.com/h"
