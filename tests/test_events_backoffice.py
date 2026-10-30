@@ -30,6 +30,25 @@ def test_publish_succeeds_with_titre_and_date(client, redacteur_token):
     assert response.json()["statut"] == "publie"
 
 
+def test_publish_succeeds_even_if_alerts_fail(client, redacteur_token, monkeypatch):
+    # trigger_immediate_alerts is called synchronously from inside publish;
+    # if it blows up (e.g. Resend down), publication must still succeed.
+    def boom(*args, **kwargs):
+        raise Exception("alerts exploded")
+
+    monkeypatch.setattr(
+        "app.routers.events_backoffice.trigger_immediate_alerts", boom
+    )
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post("/backoffice/events", json={
+        "source_url": "https://example.com/e3b", "titre": "Vide grenier", "date": "2026-11-15T10:00:00"
+    }, headers=headers)
+    event_id = created.json()["id"]
+    response = client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["statut"] == "publie"
+
+
 def test_feature_toggle(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     created = client.post("/backoffice/events", json={"source_url": "https://example.com/e4"}, headers=headers)

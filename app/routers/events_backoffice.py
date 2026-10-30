@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
@@ -7,6 +9,7 @@ from app.models.event import Event, EventStatus
 from app.models.tag import Tag
 from app.models.user import Role, User
 from app.schemas.event import EventCreate, EventOut, EventUpdate
+from app.services.alerts import trigger_immediate_alerts
 
 router = APIRouter(
     prefix="/backoffice/events",
@@ -102,6 +105,14 @@ def publish_event(event_id: int, session: Session = Depends(get_session)) -> Eve
     session.add(event)
     session.commit()
     session.refresh(event)
+
+    try:
+        trigger_immediate_alerts(event, session)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "trigger_immediate_alerts failed for event %s", event.id
+        )
+
     return event
 
 

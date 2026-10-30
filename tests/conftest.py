@@ -74,3 +74,30 @@ def lecteur_token_fixture(session):
     session.refresh(user)
 
     return create_access_token(user)
+
+
+@pytest.fixture(name="other_lecteur_token")
+def other_lecteur_token_fixture(session):
+    from app.auth.security import create_access_token
+    from app.models.user import Role, User
+
+    user = User(
+        email="other-lecteur@test.com",
+        password_hash="irrelevant",
+        role=Role.lecteur,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    return create_access_token(user)
+
+
+@pytest.fixture(name="tag_id")
+def tag_id_fixture(session):
+    from sqlmodel import select
+
+    from app.models.tag import Tag
+
+    tag = session.exec(select(Tag)).first()
+    return tag.id
