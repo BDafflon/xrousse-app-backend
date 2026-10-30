@@ -57,3 +57,20 @@ def redacteur_token_fixture(session):
     session.refresh(user)
 
     return create_access_token(user)
+
+
+@pytest.fixture(name="lecteur_token")
+def lecteur_token_fixture(session):
+    from app.auth.security import create_access_token
+    from app.models.user import Role, User
+
+    user = User(
+        email="lecteur@test.com",
+        password_hash="irrelevant",
+        role=Role.lecteur,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    return create_access_token(user)
