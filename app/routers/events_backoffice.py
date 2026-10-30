@@ -8,6 +8,7 @@ from app.db import get_session
 from app.models.event import Event, EventStatus
 from app.models.tag import Tag
 from app.models.user import Role, User
+from app.models.vote import Vote
 from app.schemas.event import EventCreate, EventOut, EventUpdate
 from app.services.alerts import trigger_immediate_alerts
 
@@ -87,6 +88,14 @@ def update_event(
     if data.tag_ids is not None:
         event.tags = _resolve_tags(data.tag_ids, session)
 
+    if event.statut == EventStatus.publie and (
+        event.titre is None or event.date is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="titre et date requis pour un evenement publie",
+        )
+
     session.add(event)
     session.commit()
     session.refresh(event)
@@ -126,8 +135,29 @@ def feature_event(event_id: int, session: Session = Depends(get_session)) -> Eve
     return event
 
 
+@router.post("/{event_id}/unpublish", response_model=EventOut)
+def unpublish_event(event_id: int, session: Session = Depends(get_session)) -> Event:
+    event = _get_event_or_404(event_id, session)
+    event.statut = EventStatus.brouillon
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
+
+
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_event(event_id: int, session: Session = Depends(get_session)) -> None:
     event = _get_event_or_404(event_id, session)
+    # vote.event_id has no ON DELETE rule and no ORM cascade (see
+    # alembic/versions/0004_create_votes.py), so delete child votes first to
+    # avoid a FK violation (500 in Postgres, now also enforced in SQLite tests).
+    votes = session.exec(select(Vote).where(Vote.event_id == event_id)).all()
+    for vote in votes:
+        session.delete(vote)
+    # Flush the vote deletes first: there's no ORM relationship between Vote
+    # and Event, so without an explicit flush here SQLAlchemy's unit-of-work
+    # may order the event DELETE before the votes' in the same flush and trip
+    # the FK constraint.
+    session.flush()
     session.delete(event)
     session.commit()

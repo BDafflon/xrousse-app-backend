@@ -139,6 +139,44 @@ def test_list_filter_by_tag_and_sort_popularite(client, redacteur_token):
     assert ids_in_order.index(id_b) < ids_in_order.index(id_a)
 
 
+def test_cookieless_vote_loop_past_cap_is_rejected(client, redacteur_token):
+    # Regression for I4: without a cookie, each POST gets a fresh anonymous
+    # identity, so dedup-by-anon_id alone doesn't stop a vote loop. The
+    # per-IP-per-event rate cap must kick in instead (TestClient reports the
+    # same 'testclient' host for every request, so no special setup needed
+    # to simulate "same IP").
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/ratecap1",
+            "titre": "Fete rate cap",
+            "date": "2026-11-26T10:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    statuses = []
+    for _ in range(7):
+        with TestClient(app) as fresh_client:
+            # each iteration uses a brand-new client -> no cookie sent ->
+            # fresh anon_id every time, simulating a cookieless vote loop
+            resp = fresh_client.post(f"/events/{event_id}/vote")
+            statuses.append(resp.status_code)
+
+    assert statuses[:5] == [200] * 5
+    assert 429 in statuses[5:]
+
+    final = client.get(f"/events/{event_id}")
+    assert final.json()["likes_count"] == 5
+
+
 def test_vote_returns_404_for_unpublished_event(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     created = client.post(

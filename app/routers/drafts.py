@@ -26,6 +26,15 @@ def _get_draft_or_404(draft_id: int, session: Session) -> Event:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found"
         )
+    # Draft endpoints exist for the extension's draft-capture flow and are only
+    # meant to touch events still in brouillon. A published event's titre/date
+    # are validated at publish time and must not be nulled out or altered by a
+    # draft endpoint called (accidentally or otherwise) on a published id.
+    if event.statut != EventStatus.brouillon:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Event is no longer a draft",
+        )
     return event
 
 

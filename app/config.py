@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     resend_from_email: str
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     site_url: str = "http://localhost:5173"
+    # Optional first-admin bootstrap (see app/bootstrap.py): when BOTH are set
+    # and no user with admin_email exists yet, an admin user is created at
+    # startup with these credentials. Leave unset for normal operation; this
+    # is only meant to be used once on a fresh deployment (e.g. Coolify) with
+    # no existing admin, and is safe to leave set across restarts/redeploys
+    # since it no-ops once that user exists.
+    admin_email: str | None = None
+    admin_password: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

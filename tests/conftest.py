@@ -7,6 +7,7 @@ os.environ.setdefault("RESEND_FROM_EMAIL", "test@example.com")
 
 import pytest
 from sqlmodel import SQLModel, Session, create_engine
+from sqlalchemy import event as sa_event
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
@@ -22,6 +23,17 @@ def session_fixture():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # SQLite does not enforce foreign key constraints by default, unlike
+    # Postgres (the real deployment target). Without this pragma, tests can
+    # pass while silently relying on cascade-free deletes that would 500 in
+    # production. Enforcing it here makes FK behavior match Postgres.
+    @sa_event.listens_for(test_engine, "connect")
+    def _enable_sqlite_fk(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     SQLModel.metadata.create_all(test_engine)
     with Session(test_engine) as session:
         seed_tags(session)

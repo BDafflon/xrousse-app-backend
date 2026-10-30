@@ -129,6 +129,84 @@ def test_create_event_unauthenticated(client):
     assert response.status_code == 401
 
 
+def test_delete_event_with_vote_succeeds(client, redacteur_token):
+    # Regression for I1: deleting an event that has a vote must not 500 in
+    # Postgres (vote.event_id has no ON DELETE rule); the route now deletes
+    # child votes first.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/del1",
+            "titre": "A supprimer",
+            "date": "2026-11-15T10:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+    vote_response = client.post(f"/events/{event_id}/vote")
+    assert vote_response.status_code == 200
+
+    response = client.delete(f"/backoffice/events/{event_id}", headers=headers)
+    assert response.status_code == 204
+
+
+def test_patch_rejects_nulling_titre_on_published_event(client, redacteur_token):
+    # Regression for I2: PATCH must not be able to null titre/date on an
+    # already-published event, bypassing the publish-time validation rule.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/pub1",
+            "titre": "Titre valide",
+            "date": "2026-11-15T10:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    response = client.patch(
+        f"/backoffice/events/{event_id}", json={"titre": None}, headers=headers
+    )
+    assert response.status_code == 422
+
+
+def test_unpublish_moves_event_back_to_brouillon(client, redacteur_token):
+    # Regression for I2: unpublish endpoint exists and the event no longer
+    # appears in the public listing afterward.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/unpub1",
+            "titre": "Titre valide",
+            "date": "2026-11-15T10:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    response = client.post(
+        f"/backoffice/events/{event_id}/unpublish", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["statut"] == "brouillon"
+
+    public_list = client.get("/events")
+    ids = [item["id"] for item in public_list.json()["items"]]
+    assert event_id not in ids
+
+
+def test_unpublish_404_if_missing(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.post("/backoffice/events/9999/unpublish", headers=headers)
+    assert response.status_code == 404
+
+
 def test_create_event_rejects_timezone_aware_date(client, redacteur_token):
     # Event.date is typed NaiveDatetime, which rejects tz-aware ISO strings outright
     # (422) rather than silently accepting/normalizing the offset. This test pins

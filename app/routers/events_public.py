@@ -1,7 +1,10 @@
+import hashlib
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.auth.dependencies import get_current_user_optional
 from app.db import get_session
@@ -14,6 +17,19 @@ from app.schemas.vote import VoteOut
 from app.services.votes import get_or_create_anon_id
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+# Basic anti-spam cap: a cookieless vote loop with no cookie sent gets a
+# fresh anonymous identity on every request, so likes_count could otherwise
+# be inflated without limit. This caps votes per (event, IP) within a
+# rolling window, independent of anon_id/user_id dedup.
+_VOTE_RATE_LIMIT_MAX = 5
+_VOTE_RATE_LIMIT_WINDOW = timedelta(days=1)
+
+
+def _hash_ip(ip: str | None) -> str | None:
+    if not ip:
+        return None
+    return hashlib.sha256(ip.encode()).hexdigest()
 
 
 class EventListOut(BaseModel):
@@ -78,11 +94,29 @@ def vote_event(
 ) -> VoteOut:
     event = _get_published_event_or_404(event_id, session)
 
+    client_ip = request.client.host if request.client else None
+    ip_hash = _hash_ip(client_ip)
+
+    if ip_hash is not None:
+        window_start = datetime.now(timezone.utc) - _VOTE_RATE_LIMIT_WINDOW
+        recent_votes = session.exec(
+            select(func.count()).where(
+                Vote.event_id == event.id,
+                Vote.ip_hash == ip_hash,
+                Vote.created_at >= window_start,
+            )
+        ).one()
+        if recent_votes >= _VOTE_RATE_LIMIT_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many votes from this network for this event",
+            )
+
     if current_user is not None:
-        vote = Vote(event_id=event.id, user_id=current_user.id)
+        vote = Vote(event_id=event.id, user_id=current_user.id, ip_hash=ip_hash)
     else:
         anon_id = get_or_create_anon_id(request, response)
-        vote = Vote(event_id=event.id, anon_id=anon_id)
+        vote = Vote(event_id=event.id, anon_id=anon_id, ip_hash=ip_hash)
 
     session.add(vote)
     try:

@@ -74,6 +74,28 @@ def test_patch_source_conflict_with_other_event(client, redacteur_token):
     assert response.status_code == 409
 
 
+def test_patch_title_409_if_event_already_published(client, redacteur_token):
+    # Regression for I2: draft endpoints are restricted to brouillon-status
+    # events, so a published event's titre can't be nulled/altered via a
+    # draft endpoint called on its id.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/draftpub1",
+            "titre": "Titre valide",
+            "date": "2026-11-15T10:00:00",
+        },
+        headers=headers,
+    ).json()
+    client.post(f"/backoffice/events/{created['id']}/publish", headers=headers)
+
+    response = client.patch(
+        f"/drafts/{created['id']}/title", json={"titre": None}, headers=headers
+    )
+    assert response.status_code == 409
+
+
 def test_patch_source_same_url_is_noop_not_conflict(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/h"}, headers=headers).json()

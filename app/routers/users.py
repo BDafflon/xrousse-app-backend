@@ -4,7 +4,10 @@ from sqlmodel import Session, select
 from app.auth.dependencies import require_role
 from app.auth.security import hash_password
 from app.db import get_session
+from app.models.event import Event
+from app.models.subscription import Subscription
 from app.models.user import Role, User
+from app.models.vote import Vote
 from app.schemas.user import UserCreateByAdmin, UserOut
 
 router = APIRouter(
@@ -63,6 +66,33 @@ def delete_user(user_id: int, session: Session = Depends(get_session)) -> None:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot delete the last remaining admin",
             )
+
+    # event.created_by_id, vote.user_id and subscription.user_id all reference
+    # user.id with no ON DELETE rule, so deleting a user with any authored
+    # content would 500 in Postgres. Rather than silently cascading someone's
+    # authored events/votes/subscriptions away, block the deletion with a
+    # clear 409 (product decision: deletion of authored content must be
+    # explicit, not implicit).
+    events_count = len(
+        session.exec(select(Event).where(Event.created_by_id == user_id)).all()
+    )
+    votes_count = len(
+        session.exec(select(Vote).where(Vote.user_id == user_id)).all()
+    )
+    subscriptions_count = len(
+        session.exec(
+            select(Subscription).where(Subscription.user_id == user_id)
+        ).all()
+    )
+    if events_count or votes_count or subscriptions_count:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "cannot delete user: has "
+                f"{events_count} created events / {votes_count} votes / "
+                f"{subscriptions_count} subscriptions"
+            ),
+        )
 
     session.delete(user)
     session.commit()
