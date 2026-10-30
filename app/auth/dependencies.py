@@ -42,6 +42,28 @@ def get_current_user(
     return user
 
 
+def get_current_user_optional(
+    token: str = Depends(oauth2_scheme),
+    session: Session = Depends(get_session),
+) -> User | None:
+    if not token:
+        return None
+
+    try:
+        payload = decode_token(token)
+    except jwt.InvalidTokenError:
+        return None
+
+    if payload.get("type") != "access":
+        return None
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        return None
+
+    return session.get(User, int(user_id))
+
+
 def require_role(*roles: Role):
     def dependency(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in roles:
