@@ -30,7 +30,7 @@ def create_tag(data: TagIn, session: Session = Depends(get_session)) -> Tag:
             status_code=status.HTTP_409_CONFLICT, detail="Tag already exists"
         )
 
-    tag = Tag(nom=data.nom, slug=slug, is_predefined=False)
+    tag = Tag(nom=data.nom, slug=slug, is_predefined=False, famille=data.famille)
     session.add(tag)
     session.commit()
     session.refresh(tag)

@@ -18,3 +18,12 @@ class RefreshIn(BaseModel):
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    new_password: str

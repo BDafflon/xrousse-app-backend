@@ -48,3 +48,35 @@ def create_refresh_token(user: User) -> str:
 def decode_token(token: str) -> dict:
     settings = get_settings()
     return jwt.decode(token, settings.jwt_secret_key, algorithms=[JWT_ALGORITHM])
+
+
+def create_password_reset_token(user: User) -> str:
+    """Single-use, short-lived token for the forgot-password flow.
+
+    Embeds a short slice of the user's current password_hash so the token
+    is implicitly invalidated once the password changes (no separate
+    used/unused column needed): a token generated before a reset will no
+    longer match the hash after that reset succeeds.
+    """
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user.id),
+        "type": "password_reset",
+        "pwfp": user.password_hash[-12:],
+        "exp": now + timedelta(hours=1),
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=JWT_ALGORITHM)
+
+
+def verify_password_reset_token(token: str, user: User) -> bool:
+    try:
+        settings = get_settings()
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        return False
+    if payload.get("type") != "password_reset":
+        return False
+    if payload.get("sub") != str(user.id):
+        return False
+    return payload.get("pwfp") == user.password_hash[-12:]

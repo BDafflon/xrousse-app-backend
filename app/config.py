@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # since it no-ops once that user exists.
     admin_email: str | None = None
     admin_password: str | None = None
+    # Garage/S3 storage for event images. The bucket does not need public
+    # website access — the backend fetches objects with these credentials
+    # and proxies them via GET /uploads/{key}, so images work regardless of
+    # the S3 provider's DNS/website configuration.
+    s3_endpoint_url: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    s3_bucket_name: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
