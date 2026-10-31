@@ -42,6 +42,13 @@ settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Firefox's moz-extension:// origin is a random per-install UUID, not the
+    # extension's stable manifest id (unlike Chrome's chrome-extension://,
+    # which IS derived from the manifest's fixed `key` and is listed exactly
+    # in cors_origins) — so the Firefox extension origin can only be matched
+    # by scheme, not pinned to one exact origin. Scoped to the moz-extension
+    # scheme only, not a broad wildcard.
+    allow_origin_regex=r"moz-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
