@@ -120,3 +120,53 @@ def test_patch_image_404(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     response = client.patch("/drafts/9999/image", json={"image_url": "/uploads/events/abc.jpg"}, headers=headers)
     assert response.status_code == 404
+
+
+def test_patch_date_updates_date(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/j"}, headers=headers).json()
+    response = client.patch(
+        f"/drafts/{draft['id']}/date", json={"date": "2026-11-15T19:00:00"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["date"] == "2026-11-15T19:00:00"
+
+
+def test_patch_date_fin_updates_date_fin(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/k"}, headers=headers).json()
+    client.patch(f"/drafts/{draft['id']}/date", json={"date": "2026-11-15T19:00:00"}, headers=headers)
+    response = client.patch(
+        f"/drafts/{draft['id']}/date-fin", json={"date_fin": "2026-11-16T23:00:00"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["date_fin"] == "2026-11-16T23:00:00"
+
+
+def test_patch_date_fin_without_date_is_ok_on_draft(client, redacteur_token):
+    # Unlike EventCreate, a draft PATCH allows date_fin to be set before date
+    # has ever been captured (the extension may receive it in either order);
+    # only the date/date_fin ordering itself is validated once both are set.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/l"}, headers=headers).json()
+    response = client.patch(
+        f"/drafts/{draft['id']}/date-fin", json={"date_fin": "2026-11-16T23:00:00"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["date_fin"] == "2026-11-16T23:00:00"
+
+
+def test_patch_date_fin_before_date_rejected(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/m"}, headers=headers).json()
+    client.patch(f"/drafts/{draft['id']}/date", json={"date": "2026-11-15T19:00:00"}, headers=headers)
+    response = client.patch(
+        f"/drafts/{draft['id']}/date-fin", json={"date_fin": "2026-11-10T23:00:00"}, headers=headers
+    )
+    assert response.status_code == 422
+
+
+def test_patch_date_404(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.patch("/drafts/9999/date", json={"date": "2026-11-15T19:00:00"}, headers=headers)
+    assert response.status_code == 404

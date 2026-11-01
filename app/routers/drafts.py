@@ -7,12 +7,14 @@ from app.models.event import Event, EventStatus
 from app.models.user import Role, User
 from app.schemas.draft import (
     DraftAppendDescriptionIn,
+    DraftDateFinIn,
+    DraftDateIn,
     DraftImageIn,
     DraftSourceIn,
     DraftTitleIn,
     DraftUpsertIn,
 )
-from app.schemas.event import EventOut
+from app.schemas.event import EventOut, _validate_event_dates
 
 router = APIRouter(
     prefix="/drafts",
@@ -130,6 +132,53 @@ def patch_draft_image(
 ) -> Event:
     event = _get_draft_or_404(draft_id, session)
     event.image_url = data.image_url
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
+
+
+def _revalidate_dates(event: Event) -> None:
+    # Mirrors events_backoffice.update_event's merged-state re-validation:
+    # require_date=False because a draft (unlike a published event) is
+    # allowed to have no date at all — only the date/date_fin/recurrence
+    # *combination*, if any of them are set, needs to make sense.
+    try:
+        _validate_event_dates(
+            event.date,
+            event.date_fin,
+            event.recurrence_jours,
+            event.recurrence_fin,
+            require_date=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.patch("/{draft_id}/date", response_model=EventOut)
+def patch_draft_date(
+    draft_id: int,
+    data: DraftDateIn,
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_draft_or_404(draft_id, session)
+    event.date = data.date
+    _revalidate_dates(event)
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
+
+
+@router.patch("/{draft_id}/date-fin", response_model=EventOut)
+def patch_draft_date_fin(
+    draft_id: int,
+    data: DraftDateFinIn,
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_draft_or_404(draft_id, session)
+    event.date_fin = data.date_fin
+    _revalidate_dates(event)
     session.add(event)
     session.commit()
     session.refresh(event)

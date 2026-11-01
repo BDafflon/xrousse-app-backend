@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, NaiveDatetime
 
 
 class DraftUpsertIn(BaseModel):
@@ -21,3 +21,11 @@ class DraftSourceIn(BaseModel):
 
 class DraftImageIn(BaseModel):
     image_url: str
+
+
+class DraftDateIn(BaseModel):
+    date: NaiveDatetime | None = None
+
+
+class DraftDateFinIn(BaseModel):
+    date_fin: NaiveDatetime | None = None
