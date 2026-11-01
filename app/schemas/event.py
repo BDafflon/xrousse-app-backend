@@ -50,12 +50,13 @@ def _validate_event_dates(
                 raise ValueError(
                     "multi-day range and recurrence are mutually exclusive"
                 )
-        if recurrence_fin is not None and date is not None:
-            if recurrence_fin.date() < date.date():
-                raise ValueError("recurrence_fin must be on or after date")
     elif date_fin is not None and date is not None:
         if date_fin.date() < date.date():
             raise ValueError("date_fin must be on or after date")
+
+    if recurrence_fin is not None and date is not None:
+        if recurrence_fin.date() < date.date():
+            raise ValueError("recurrence_fin must be on or after date")
 
 
 class EventCreate(BaseModel):

@@ -359,6 +359,20 @@ def test_create_event_rejects_invalid_recurrence_jours_values(client, redacteur_
     assert response.status_code == 422
 
 
+def test_create_event_rejects_recurrence_fin_before_date_without_recurrence_jours(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/bad-7",
+            "date": "2026-12-08T19:00:00",
+            "recurrence_fin": "2026-12-01T00:00:00",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
 def test_create_event_accepts_weekly_recurrence(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     response = client.post(
