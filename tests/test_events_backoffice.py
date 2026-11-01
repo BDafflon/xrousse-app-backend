@@ -260,3 +260,22 @@ def test_publish_event_without_date_or_permanent_still_422(client, redacteur_tok
     event_id = created.json()["id"]
     response = client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
     assert response.status_code == 422
+
+
+def test_create_event_with_multi_day_and_recurrence_fields_persists(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/multi-day-1",
+            "titre": "Marche de Noel",
+            "date": "2026-12-05T10:00:00",
+            "date_fin": "2026-12-08T18:00:00",
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["date_fin"] == "2026-12-08T18:00:00"
+    assert body["recurrence_jours"] is None
+    assert body["recurrence_fin"] is None
