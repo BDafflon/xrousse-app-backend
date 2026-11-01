@@ -7,6 +7,7 @@ from app.models.event import Event, EventStatus
 from app.models.user import Role, User
 from app.schemas.draft import (
     DraftAppendDescriptionIn,
+    DraftImageIn,
     DraftSourceIn,
     DraftTitleIn,
     DraftUpsertIn,
@@ -115,6 +116,20 @@ def patch_draft_source(
         )
 
     event.source_url = data.source_url
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
+
+
+@router.patch("/{draft_id}/image", response_model=EventOut)
+def patch_draft_image(
+    draft_id: int,
+    data: DraftImageIn,
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_draft_or_404(draft_id, session)
+    event.image_url = data.image_url
     session.add(event)
     session.commit()
     session.refresh(event)

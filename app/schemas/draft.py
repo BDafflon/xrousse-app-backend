@@ -17,3 +17,7 @@ class DraftAppendDescriptionIn(BaseModel):
 
 class DraftSourceIn(BaseModel):
     source_url: str
+
+
+class DraftImageIn(BaseModel):
+    image_url: str

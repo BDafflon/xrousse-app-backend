@@ -104,3 +104,19 @@ def test_patch_source_same_url_is_noop_not_conflict(client, redacteur_token):
     )
     assert response.status_code == 200
     assert response.json()["source_url"] == "https://example.com/h"
+
+
+def test_patch_image_updates_url(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/i"}, headers=headers).json()
+    response = client.patch(
+        f"/drafts/{draft['id']}/image", json={"image_url": "/uploads/events/abc.jpg"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["image_url"] == "/uploads/events/abc.jpg"
+
+
+def test_patch_image_404(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.patch("/drafts/9999/image", json={"image_url": "/uploads/events/abc.jpg"}, headers=headers)
+    assert response.status_code == 404
