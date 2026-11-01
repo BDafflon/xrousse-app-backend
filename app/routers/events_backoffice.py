@@ -65,6 +65,7 @@ def create_event(
         date=data.date,
         lieu=data.lieu,
         image_url=data.image_url,
+        is_permanent=data.is_permanent,
         created_by_id=current_user.id,
         tags=tags,
     )
@@ -89,7 +90,7 @@ def update_event(
         event.tags = _resolve_tags(data.tag_ids, session)
 
     if event.statut == EventStatus.publie and (
-        event.titre is None or event.date is None
+        event.titre is None or (event.date is None and not event.is_permanent)
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -105,7 +106,7 @@ def update_event(
 @router.post("/{event_id}/publish", response_model=EventOut)
 def publish_event(event_id: int, session: Session = Depends(get_session)) -> Event:
     event = _get_event_or_404(event_id, session)
-    if event.titre is None or event.date is None:
+    if event.titre is None or (event.date is None and not event.is_permanent):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="titre et date requis pour publier",

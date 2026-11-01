@@ -18,6 +18,7 @@ class EventCreate(BaseModel):
     lieu: str | None = None
     image_url: str | None = None
     tag_ids: list[int] = []
+    is_permanent: bool = False
 
 
 class EventUpdate(BaseModel):
@@ -27,6 +28,7 @@ class EventUpdate(BaseModel):
     lieu: str | None = None
     image_url: str | None = None
     tag_ids: list[int] | None = None
+    is_permanent: bool | None = None
 
 
 class EventOut(BaseModel):

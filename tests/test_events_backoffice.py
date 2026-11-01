@@ -231,3 +231,32 @@ def test_create_event_defaults_is_permanent_false(client, redacteur_token):
         "/backoffice/events", json={"source_url": "https://example.com/perm1"}, headers=headers
     )
     assert created.json()["is_permanent"] is False
+
+
+def test_publish_permanent_event_without_date_succeeds(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/perm2",
+            "titre": "Expo permanente",
+            "is_permanent": True,
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    response = client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["statut"] == "publie"
+
+
+def test_publish_event_without_date_or_permanent_still_422(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/perm3", "titre": "Sans date"},
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    response = client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+    assert response.status_code == 422
