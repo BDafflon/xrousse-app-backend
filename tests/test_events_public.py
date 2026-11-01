@@ -549,3 +549,72 @@ def test_mixed_sort_with_no_permanent_events_is_plain_date_order(client, redacte
     response = client.get("/events")
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == [created["id"]]
+
+
+def test_week_view_includes_already_running_multi_day_event(client, redacteur_token):
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+    start = now - timedelta(days=2)
+    end = now + timedelta(days=2)
+
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/running-multi-day",
+            "titre": "Festival en cours",
+            "date": start.strftime("%Y-%m-%dT%H:%M:%S"),
+            "date_fin": end.strftime("%Y-%m-%dT%H:%M:%S"),
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "week"})
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()["items"]]
+    assert event_id in ids
+
+
+def test_mixed_view_sorts_past_start_recurring_event_near_top(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    # Recurring event started far in the past but still recurs every day, so
+    # its next_occurrence is "today" even though its stored `date` is old.
+    recurring = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/mixed-recurring-top",
+            "titre": "Marche permanent hebdo",
+            "date": "2020-01-06T19:00:00",
+            "recurrence_jours": "1,2,3,4,5,6,7",
+        },
+        headers=headers,
+    ).json()
+    client.post(f"/backoffice/events/{recurring['id']}/publish", headers=headers)
+
+    # Several events dated in the far future, which would otherwise sort
+    # before the recurring event's old stored `date` under a raw
+    # Event.date.asc() ordering, but should sort AFTER it once ordering is
+    # based on next_occurrence.
+    future_ids = []
+    for i in range(3):
+        created = client.post(
+            "/backoffice/events",
+            json={
+                "source_url": f"https://example.com/mixed-future-{i}",
+                "titre": f"Futur {i}",
+                "date": f"2027-01-{i + 1:02d}T10:00:00",
+            },
+            headers=headers,
+        ).json()
+        client.post(f"/backoffice/events/{created['id']}/publish", headers=headers)
+        future_ids.append(created["id"])
+
+    response = client.get("/events", params={"view": "mixed", "sort": "date"})
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()["items"]]
+    recurring_index = ids.index(recurring["id"])
+    for future_id in future_ids:
+        assert recurring_index < ids.index(future_id)

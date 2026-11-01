@@ -145,6 +145,10 @@ def list_events(
                             Event.recurrence_fin >= start_of_today,
                         ),
                     ),
+                    and_(
+                        Event.date_fin.is_not(None),
+                        Event.date_fin >= start_of_today,
+                    ),
                 )
             )
         )
@@ -156,12 +160,16 @@ def list_events(
         # dated and permanent events separately and interleave them: one
         # permanent event after every 5 dated events.
         dated_query = query.where(Event.is_permanent.is_(False)).order_by(
-            Event.date.asc()
+            Event.id.asc()
         )
         permanent_query = query.where(Event.is_permanent.is_(True)).order_by(
             Event.id.asc()
         )
-        dated_events = session.exec(dated_query).all()
+        today = date.today()
+        dated_events = sorted(
+            session.exec(dated_query).all(),
+            key=lambda event: next_occurrence(event, today) or date.max,
+        )
         permanent_events = session.exec(permanent_query).all()
 
         merged: list[Event] = []
@@ -192,10 +200,12 @@ def list_events(
         elif sort == "nouveaute":
             query = query.order_by(Event.id.desc())
         elif view != "week":
-            # "week" is sorted in Python below, by next_occurrence rather
-            # than raw Event.date, since a recurring event's next occurrence
-            # can differ from its stored `date`.
-            query = query.order_by(Event.date.asc())
+            # "week" and this default-date fallback are both sorted in Python
+            # below, by next_occurrence rather than raw Event.date, since a
+            # recurring event's next occurrence can differ from its stored
+            # `date`. Order by id here for a deterministic fetch order prior
+            # to that Python-side sort.
+            query = query.order_by(Event.id.asc())
 
         if view == "mixed":
             offset = (page - 1) * page_size
@@ -209,6 +219,14 @@ def list_events(
             events = sorted(
                 events,
                 key=lambda event: next_occurrence(event, start_of_today) or date.max,
+            )
+        elif view != "mixed" and sort not in ("popularite", "nouveaute"):
+            # Same rationale as the "week" sort above: order by each event's
+            # actual next occurrence rather than its raw stored `date`.
+            today = date.today()
+            events = sorted(
+                events,
+                key=lambda event: next_occurrence(event, today) or date.max,
             )
 
     if view == "calendar":
