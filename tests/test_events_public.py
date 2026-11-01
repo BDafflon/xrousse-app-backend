@@ -185,3 +185,96 @@ def test_vote_returns_404_for_unpublished_event(client, redacteur_token):
     event_id = created.json()["id"]
     response = client.post(f"/events/{event_id}/vote")
     assert response.status_code == 404
+
+
+def test_view_permanent_returns_only_permanent_events(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    dated = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/vp1", "titre": "Dated", "date": "2026-12-01T10:00:00"},
+        headers=headers,
+    ).json()
+    permanent = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/vp2", "titre": "Permanent", "is_permanent": True},
+        headers=headers,
+    ).json()
+    client.post(f"/backoffice/events/{dated['id']}/publish", headers=headers)
+    client.post(f"/backoffice/events/{permanent['id']}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "permanent"})
+    ids = [item["id"] for item in response.json()["items"]]
+    assert permanent["id"] in ids
+    assert dated["id"] not in ids
+
+
+def test_view_calendar_excludes_permanent_and_filters_month(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    in_month = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/vc1", "titre": "In", "date": "2026-12-15T10:00:00"},
+        headers=headers,
+    ).json()
+    out_of_month = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/vc2", "titre": "Out", "date": "2027-01-15T10:00:00"},
+        headers=headers,
+    ).json()
+    permanent = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/vc3", "titre": "Perm", "is_permanent": True},
+        headers=headers,
+    ).json()
+    for e in (in_month, out_of_month, permanent):
+        client.post(f"/backoffice/events/{e['id']}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "calendar", "month": 12, "year": 2026})
+    ids = [item["id"] for item in response.json()["items"]]
+    assert ids == [in_month["id"]]
+
+
+def test_view_week_includes_lower_bound_excludes_beyond(client, redacteur_token, monkeypatch):
+    import app.routers.events_public as events_public_module
+    from datetime import datetime, timezone
+
+    fixed_now = datetime(2026, 12, 10, 8, 0, 0, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    monkeypatch.setattr(events_public_module, "datetime", FixedDatetime)
+
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    today_event = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/vw1", "titre": "Today", "date": "2026-12-10T00:00:00"},
+        headers=headers,
+    ).json()
+    beyond_event = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/vw2", "titre": "Beyond", "date": "2026-12-18T00:00:00"},
+        headers=headers,
+    ).json()
+    for e in (today_event, beyond_event):
+        client.post(f"/backoffice/events/{e['id']}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "week"})
+    ids = [item["id"] for item in response.json()["items"]]
+    assert today_event["id"] in ids
+    assert beyond_event["id"] not in ids
+
+
+def test_view_mixed_unpaginated_views_ignore_page_size(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    for i in range(3):
+        created = client.post(
+            "/backoffice/events",
+            json={"source_url": f"https://example.com/vm{i}", "titre": f"P{i}", "is_permanent": True},
+            headers=headers,
+        ).json()
+        client.post(f"/backoffice/events/{created['id']}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "permanent", "page_size": 1})
+    assert len(response.json()["items"]) == 3

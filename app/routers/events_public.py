@@ -49,6 +49,9 @@ def _get_published_event_or_404(event_id: int, session: Session) -> Event:
 
 @router.get("", response_model=EventListOut)
 def list_events(
+    view: str = Query(default="mixed"),
+    month: int | None = Query(default=None),
+    year: int | None = Query(default=None),
     tag: list[str] | None = Query(default=None),
     sort: str = Query(default="date"),
     page: int = Query(default=1, ge=1),
@@ -65,15 +68,49 @@ def list_events(
             .distinct()
         )
 
-    if sort == "popularite":
+    if view == "permanent":
+        query = query.where(Event.is_permanent.is_(True))
+    elif view == "calendar":
+        query = query.where(Event.is_permanent.is_(False))
+        resolved_month = month
+        resolved_year = year
+        if resolved_month is None or resolved_year is None:
+            now = datetime.now(timezone.utc)
+            resolved_month = now.month
+            resolved_year = now.year
+        start_of_month = datetime(resolved_year, resolved_month, 1, tzinfo=timezone.utc)
+        if resolved_month == 12:
+            start_of_next_month = datetime(resolved_year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            start_of_next_month = datetime(
+                resolved_year, resolved_month + 1, 1, tzinfo=timezone.utc
+            )
+        query = query.where(Event.date >= start_of_month).where(
+            Event.date < start_of_next_month
+        )
+    elif view == "week":
+        now = datetime.now(timezone.utc)
+        start_of_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+        query = (
+            query.where(Event.is_permanent.is_(False))
+            .where(Event.date >= start_of_today)
+            .where(Event.date < start_of_today + timedelta(days=7))
+        )
+
+    if view == "week":
+        query = query.order_by(Event.date.asc())
+    elif sort == "popularite":
         query = query.order_by(Event.likes_count.desc())
     elif sort == "nouveaute":
         query = query.order_by(Event.id.desc())
     else:
         query = query.order_by(Event.date.asc())
 
-    offset = (page - 1) * page_size
-    events = session.exec(query.offset(offset).limit(page_size)).all()
+    if view == "mixed":
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+
+    events = session.exec(query).all()
 
     items = [EventOut.model_validate(event, from_attributes=True) for event in events]
     return EventListOut(items=items, page=page, page_size=page_size)
