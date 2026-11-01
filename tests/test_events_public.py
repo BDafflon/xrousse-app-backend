@@ -278,3 +278,45 @@ def test_view_mixed_unpaginated_views_ignore_page_size(client, redacteur_token):
 
     response = client.get("/events", params={"view": "permanent", "page_size": 1})
     assert len(response.json()["items"]) == 3
+
+
+def test_mixed_default_sort_interleaves_permanent_events(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    dated_ids = []
+    for i in range(6):
+        created = client.post(
+            "/backoffice/events",
+            json={
+                "source_url": f"https://example.com/il{i}",
+                "titre": f"D{i}",
+                "date": f"2026-12-{i + 1:02d}T10:00:00",
+            },
+            headers=headers,
+        ).json()
+        client.post(f"/backoffice/events/{created['id']}/publish", headers=headers)
+        dated_ids.append(created["id"])
+
+    permanent = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/ilp", "titre": "Perm", "is_permanent": True},
+        headers=headers,
+    ).json()
+    client.post(f"/backoffice/events/{permanent['id']}/publish", headers=headers)
+
+    response = client.get("/events", params={"page_size": 10})
+    ids = [item["id"] for item in response.json()["items"]]
+    # the permanent event must not be pinned at the very end of 6 dated events
+    assert ids.index(permanent["id"]) < len(ids) - 1
+
+
+def test_mixed_sort_with_no_permanent_events_is_plain_date_order(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/nopermanent", "titre": "Only dated", "date": "2026-12-01T10:00:00"},
+        headers=headers,
+    ).json()
+    client.post(f"/backoffice/events/{created['id']}/publish", headers=headers)
+    response = client.get("/events")
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [created["id"]]

@@ -97,20 +97,53 @@ def list_events(
             .where(Event.date < start_of_today + timedelta(days=7))
         )
 
-    if view == "week":
-        query = query.order_by(Event.date.asc())
-    elif sort == "popularite":
-        query = query.order_by(Event.likes_count.desc())
-    elif sort == "nouveaute":
-        query = query.order_by(Event.id.desc())
-    else:
-        query = query.order_by(Event.date.asc())
+    if view == "mixed" and sort not in ("popularite", "nouveaute"):
+        # Default "date" sort for the mixed view: a plain `Event.date.asc()`
+        # sort would push every permanent event (date IS NULL) to one end of
+        # the list (NULLS LAST on Postgres), burying them. Instead, fetch
+        # dated and permanent events separately and interleave them: one
+        # permanent event after every 5 dated events.
+        dated_query = query.where(Event.is_permanent.is_(False)).order_by(
+            Event.date.asc()
+        )
+        permanent_query = query.where(Event.is_permanent.is_(True)).order_by(
+            Event.id.asc()
+        )
+        dated_events = session.exec(dated_query).all()
+        permanent_events = session.exec(permanent_query).all()
 
-    if view == "mixed":
+        merged: list[Event] = []
+        dated_total = len(dated_events)
+        permanent_total = len(permanent_events)
+        permanent_index = 0
+        for chunk_start in range(0, dated_total, 5):
+            merged.extend(dated_events[chunk_start : chunk_start + 5])
+            if permanent_total:
+                merged.append(permanent_events[permanent_index % permanent_total])
+                permanent_index += 1
+        # Dated events ran out before every permanent event had a turn in
+        # the round-robin (e.g. zero or few dated events): append whatever
+        # permanent events were never placed, so none are dropped.
+        if permanent_index < permanent_total:
+            merged.extend(permanent_events[permanent_index:])
+
         offset = (page - 1) * page_size
-        query = query.offset(offset).limit(page_size)
+        events = merged[offset : offset + page_size]
+    else:
+        if view == "week":
+            query = query.order_by(Event.date.asc())
+        elif sort == "popularite":
+            query = query.order_by(Event.likes_count.desc())
+        elif sort == "nouveaute":
+            query = query.order_by(Event.id.desc())
+        else:
+            query = query.order_by(Event.date.asc())
 
-    events = session.exec(query).all()
+        if view == "mixed":
+            offset = (page - 1) * page_size
+            query = query.offset(offset).limit(page_size)
+
+        events = session.exec(query).all()
 
     items = [EventOut.model_validate(event, from_attributes=True) for event in events]
     return EventListOut(items=items, page=page, page_size=page_size)
