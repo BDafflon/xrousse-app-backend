@@ -305,8 +305,12 @@ def test_mixed_default_sort_interleaves_permanent_events(client, redacteur_token
 
     response = client.get("/events", params={"page_size": 10})
     ids = [item["id"] for item in response.json()["items"]]
-    # the permanent event must not be pinned at the very end of 6 dated events
-    assert ids.index(permanent["id"]) < len(ids) - 1
+    # One permanent event is inserted after every 5 dated events: with 6
+    # dated events, the permanent event lands at index 5 (after the first
+    # chunk of 5 dated events, before the 6th dated event). This exact
+    # position pins the real interleave algorithm and fails against a
+    # plain date sort regardless of how the test DB orders NULL dates.
+    assert ids[5] == permanent["id"]
 
 
 def test_mixed_sort_with_no_permanent_events_is_plain_date_order(client, redacteur_token):
