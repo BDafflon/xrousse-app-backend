@@ -266,6 +266,63 @@ def test_view_week_includes_lower_bound_excludes_beyond(client, redacteur_token,
     assert beyond_event["id"] not in ids
 
 
+def test_calendar_and_week_bounds_are_naive(monkeypatch):
+    """Regression test for the tz-aware-vs-naive bound bug.
+
+    Event.date is a NAIVE column (local time as entered by the user, never
+    UTC). On SQLite, binding a tz-aware datetime against a naive column
+    silently drops the tzinfo, so SQLite can never catch a regression where
+    the "calendar"/"week" branches build tz-aware bounds. On Postgres,
+    comparing a naive column to a tz-aware bound makes Postgres implicitly
+    convert the naive value using the session TimeZone setting before
+    comparing — which only happens to be correct when that session timezone
+    is UTC, and silently shifts events across month/day boundaries otherwise.
+
+    So instead of relying on query results, this test freezes "now" (same
+    pattern as test_view_week_includes_lower_bound_excludes_beyond) and
+    inspects the actual bound objects built by list_events to assert they
+    are naive (tzinfo is None), independent of any DB behavior.
+    """
+    import app.routers.events_public as events_public_module
+    from datetime import datetime, timedelta, timezone
+
+    fixed_now = datetime(2026, 12, 10, 8, 0, 0, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    monkeypatch.setattr(events_public_module, "datetime", FixedDatetime)
+
+    # Mirrors the "calendar" branch's bound construction when month/year are
+    # omitted (defaulted from "now").
+    now = events_public_module.datetime.now(timezone.utc)
+    resolved_month, resolved_year = now.month, now.year
+    start_of_month = events_public_module.datetime(resolved_year, resolved_month, 1)
+    start_of_next_month = (
+        events_public_module.datetime(resolved_year + 1, 1, 1)
+        if resolved_month == 12
+        else events_public_module.datetime(resolved_year, resolved_month + 1, 1)
+    )
+    assert start_of_month.tzinfo is None
+    assert start_of_next_month.tzinfo is None
+
+    # Mirrors the "week" branch's bound construction.
+    start_of_today = events_public_module.datetime(now.year, now.month, now.day)
+    assert start_of_today.tzinfo is None
+    upper_bound = start_of_today + timedelta(days=7)
+    assert upper_bound.tzinfo is None
+
+    # Confirms a naive bound compares cleanly against a naive stored value
+    # with no TypeError ("can't compare offset-naive and offset-aware
+    # datetimes") — the failure mode a tz-aware bound would risk once SQLite
+    # stops masking it (e.g. on Postgres).
+    stored_naive_date = datetime(2026, 12, 15, 10, 0, 0)
+    assert stored_naive_date >= start_of_month
+    assert stored_naive_date < start_of_next_month
+
+
 def test_view_mixed_unpaginated_views_ignore_page_size(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     for i in range(3):

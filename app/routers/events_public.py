@@ -78,19 +78,25 @@ def list_events(
             now = datetime.now(timezone.utc)
             resolved_month = now.month
             resolved_year = now.year
-        start_of_month = datetime(resolved_year, resolved_month, 1, tzinfo=timezone.utc)
+        # Event.date is a naive column (local time as entered by the user,
+        # never UTC — see Event.date's docstring). These bounds must stay
+        # naive so Postgres compares them literally; a tz-aware bound would
+        # make Postgres implicitly convert it to the session TimeZone before
+        # comparing, silently shifting events across the month/day boundary
+        # whenever that session timezone isn't UTC.
+        start_of_month = datetime(resolved_year, resolved_month, 1)
         if resolved_month == 12:
-            start_of_next_month = datetime(resolved_year + 1, 1, 1, tzinfo=timezone.utc)
+            start_of_next_month = datetime(resolved_year + 1, 1, 1)
         else:
-            start_of_next_month = datetime(
-                resolved_year, resolved_month + 1, 1, tzinfo=timezone.utc
-            )
+            start_of_next_month = datetime(resolved_year, resolved_month + 1, 1)
         query = query.where(Event.date >= start_of_month).where(
             Event.date < start_of_next_month
         )
     elif view == "week":
         now = datetime.now(timezone.utc)
-        start_of_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+        # Same naive-bound requirement as the calendar view above: Event.date
+        # is naive, so start_of_today must be naive too.
+        start_of_today = datetime(now.year, now.month, now.day)
         query = (
             query.where(Event.is_permanent.is_(False))
             .where(Event.date >= start_of_today)
