@@ -36,7 +36,7 @@ class Event(SQLModel, table=True):
     # `datetime` and explicitly normalize (e.g. convert to UTC then drop tzinfo).
     date: NaiveDatetime | None = Field(default=None)
     date_fin: NaiveDatetime | None = Field(default=None)
-    # CSV of ISO weekday ints (1=Mon..7=Sun), e.g. "1,4" = Tuesday + Friday.
+    # CSV of ISO weekday ints (1=Mon..7=Sun), e.g. "2,5" = Tuesday + Friday.
     recurrence_jours: str | None = Field(default=None)
     recurrence_fin: NaiveDatetime | None = Field(default=None)
     lieu: str | None = Field(default=None)
