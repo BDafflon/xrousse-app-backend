@@ -1,5 +1,6 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
@@ -49,8 +50,8 @@ def _get_published_event_or_404(event_id: int, session: Session) -> Event:
 
 @router.get("", response_model=EventListOut)
 def list_events(
-    view: str = Query(default="mixed"),
-    month: int | None = Query(default=None),
+    view: Literal["mixed", "calendar", "permanent", "week"] = Query(default="mixed"),
+    month: int | None = Query(default=None, ge=1, le=12),
     year: int | None = Query(default=None),
     tag: list[str] | None = Query(default=None),
     sort: str = Query(default="date"),
@@ -124,12 +125,17 @@ def list_events(
         permanent_index = 0
         for chunk_start in range(0, dated_total, 5):
             merged.extend(dated_events[chunk_start : chunk_start + 5])
-            if permanent_total:
-                merged.append(permanent_events[permanent_index % permanent_total])
+            # Each permanent event may appear at most once in the merged
+            # result. Once the permanent list is exhausted, stop inserting
+            # (no `%` wraparound) — the remaining dated events then continue
+            # uninterrupted with no more permanent insertions.
+            if permanent_index < permanent_total:
+                merged.append(permanent_events[permanent_index])
                 permanent_index += 1
         # Dated events ran out before every permanent event had a turn in
-        # the round-robin (e.g. zero or few dated events): append whatever
-        # permanent events were never placed, so none are dropped.
+        # the round-robin (e.g. zero or few dated events, or more permanents
+        # than chunks): append whatever permanent events were never placed,
+        # so none are dropped and none are repeated.
         if permanent_index < permanent_total:
             merged.extend(permanent_events[permanent_index:])
 

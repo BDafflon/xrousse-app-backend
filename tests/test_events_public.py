@@ -266,25 +266,35 @@ def test_view_week_includes_lower_bound_excludes_beyond(client, redacteur_token,
     assert beyond_event["id"] not in ids
 
 
-def test_calendar_and_week_bounds_are_naive(monkeypatch):
+def test_calendar_and_week_bounds_are_naive(client, session, monkeypatch):
     """Regression test for the tz-aware-vs-naive bound bug.
 
     Event.date is a NAIVE column (local time as entered by the user, never
     UTC). On SQLite, binding a tz-aware datetime against a naive column
-    silently drops the tzinfo, so SQLite can never catch a regression where
-    the "calendar"/"week" branches build tz-aware bounds. On Postgres,
-    comparing a naive column to a tz-aware bound makes Postgres implicitly
-    convert the naive value using the session TimeZone setting before
-    comparing — which only happens to be correct when that session timezone
-    is UTC, and silently shifts events across month/day boundaries otherwise.
+    silently drops the tzinfo at the DBAPI level, so SQLite can never catch
+    this bug just by checking query *results* — the old buggy code (which
+    built bounds with `tzinfo=timezone.utc`) and the fixed code return the
+    same rows against this test DB. On Postgres, comparing a naive column to
+    a tz-aware bound makes Postgres implicitly convert the naive value using
+    the session TimeZone setting before comparing, which silently shifts
+    events across month/day boundaries whenever that session timezone isn't
+    UTC.
 
-    So instead of relying on query results, this test freezes "now" (same
-    pattern as test_view_week_includes_lower_bound_excludes_beyond) and
-    inspects the actual bound objects built by list_events to assert they
-    are naive (tzinfo is None), independent of any DB behavior.
+    So rather than reconstructing the bounds independently (which the prior
+    version of this test did, making it pass against the old buggy code just
+    as well), this test drives the bounds through the REAL code path: it
+    calls the actual GET /events endpoints via the test client, with the
+    session's `exec` intercepted to capture the exact SQLAlchemy statement
+    `list_events` builds, and asserts — via literal-bind compilation, which
+    renders a tz-aware datetime as "... +00:00" and a naive one without any
+    offset suffix — that the date-comparison bound literals in that captured
+    statement carry no tzinfo. This fails if someone reverts the
+    `tzinfo=timezone.utc` removal in events_public.py, because the captured
+    statement would then contain an aware literal.
     """
     import app.routers.events_public as events_public_module
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
+    from sqlmodel import Session as SQLModelSession
 
     fixed_now = datetime(2026, 12, 10, 8, 0, 0, tzinfo=timezone.utc)
 
@@ -295,32 +305,33 @@ def test_calendar_and_week_bounds_are_naive(monkeypatch):
 
     monkeypatch.setattr(events_public_module, "datetime", FixedDatetime)
 
-    # Mirrors the "calendar" branch's bound construction when month/year are
-    # omitted (defaulted from "now").
-    now = events_public_module.datetime.now(timezone.utc)
-    resolved_month, resolved_year = now.month, now.year
-    start_of_month = events_public_module.datetime(resolved_year, resolved_month, 1)
-    start_of_next_month = (
-        events_public_module.datetime(resolved_year + 1, 1, 1)
-        if resolved_month == 12
-        else events_public_module.datetime(resolved_year, resolved_month + 1, 1)
-    )
-    assert start_of_month.tzinfo is None
-    assert start_of_next_month.tzinfo is None
+    captured_statements = []
+    original_exec = SQLModelSession.exec
 
-    # Mirrors the "week" branch's bound construction.
-    start_of_today = events_public_module.datetime(now.year, now.month, now.day)
-    assert start_of_today.tzinfo is None
-    upper_bound = start_of_today + timedelta(days=7)
-    assert upper_bound.tzinfo is None
+    def capturing_exec(self, statement, *args, **kwargs):
+        captured_statements.append(statement)
+        return original_exec(self, statement, *args, **kwargs)
 
-    # Confirms a naive bound compares cleanly against a naive stored value
-    # with no TypeError ("can't compare offset-naive and offset-aware
-    # datetimes") — the failure mode a tz-aware bound would risk once SQLite
-    # stops masking it (e.g. on Postgres).
-    stored_naive_date = datetime(2026, 12, 15, 10, 0, 0)
-    assert stored_naive_date >= start_of_month
-    assert stored_naive_date < start_of_next_month
+    monkeypatch.setattr(SQLModelSession, "exec", capturing_exec)
+
+    def literal_sql(statement) -> str:
+        return str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    # Calendar view: month/year omitted, so bounds are derived from "now".
+    captured_statements.clear()
+    response = client.get("/events", params={"view": "calendar"})
+    assert response.status_code == 200
+    calendar_sql = "\n".join(literal_sql(stmt) for stmt in captured_statements)
+    assert "event.date" in calendar_sql
+    assert "+00:00" not in calendar_sql
+
+    # Week view: bounds are always derived from "now".
+    captured_statements.clear()
+    response = client.get("/events", params={"view": "week"})
+    assert response.status_code == 200
+    week_sql = "\n".join(literal_sql(stmt) for stmt in captured_statements)
+    assert "event.date" in week_sql
+    assert "+00:00" not in week_sql
 
 
 def test_view_mixed_unpaginated_views_ignore_page_size(client, redacteur_token):
@@ -368,6 +379,57 @@ def test_mixed_default_sort_interleaves_permanent_events(client, redacteur_token
     # position pins the real interleave algorithm and fails against a
     # plain date sort regardless of how the test DB orders NULL dates.
     assert ids[5] == permanent["id"]
+
+
+def test_mixed_sort_single_permanent_event_not_repeated_across_many_dated(
+    client, redacteur_token
+):
+    # Regression for the round-robin interleave bug: with few permanents
+    # relative to many dated events, `permanent_index % permanent_total`
+    # wrapped around and re-inserted the SAME permanent event multiple times
+    # in one page (e.g. 1 permanent + 15 dated -> permanent appears 3 times),
+    # producing duplicate event ids in the response (duplicate React keys on
+    # the frontend). Each permanent event must appear at most once.
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    dated_ids = []
+    for i in range(15):
+        created = client.post(
+            "/backoffice/events",
+            json={
+                "source_url": f"https://example.com/norepeat{i}",
+                "titre": f"D{i}",
+                "date": f"2026-12-{i + 1:02d}T10:00:00",
+            },
+            headers=headers,
+        ).json()
+        client.post(f"/backoffice/events/{created['id']}/publish", headers=headers)
+        dated_ids.append(created["id"])
+
+    permanent = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/norepeatp", "titre": "Perm", "is_permanent": True},
+        headers=headers,
+    ).json()
+    client.post(f"/backoffice/events/{permanent['id']}/publish", headers=headers)
+
+    response = client.get("/events", params={"page_size": 20})
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()["items"]]
+    assert ids.count(permanent["id"]) == 1
+    # Nothing dropped either: all 15 dated events plus the one permanent.
+    assert len(ids) == 16
+    for dated_id in dated_ids:
+        assert ids.count(dated_id) == 1
+
+
+def test_list_events_rejects_invalid_view(client):
+    response = client.get("/events", params={"view": "bogus"})
+    assert response.status_code == 422
+
+
+def test_list_events_rejects_out_of_range_month(client):
+    response = client.get("/events", params={"view": "calendar", "month": 13})
+    assert response.status_code == 422
 
 
 def test_mixed_sort_with_no_permanent_events_is_plain_date_order(client, redacteur_token):
