@@ -9,7 +9,7 @@ from app.models.event import Event, EventStatus
 from app.models.tag import Tag
 from app.models.user import Role, User
 from app.models.vote import Vote
-from app.schemas.event import EventCreate, EventOut, EventUpdate
+from app.schemas.event import EventCreate, EventOut, EventUpdate, _validate_event_dates
 from app.services.alerts import trigger_immediate_alerts
 
 router = APIRouter(
@@ -91,6 +91,23 @@ def update_event(
 
     if data.tag_ids is not None:
         event.tags = _resolve_tags(data.tag_ids, session)
+
+    # Re-validate against the MERGED event state (not just the raw PATCH
+    # payload, which EventUpdate's own validator already checked in
+    # isolation): a PATCH to a single field can still create an invalid
+    # combination with the event's other already-stored fields, e.g.
+    # `PATCH {"date": "..."}` pushing `date` past an already-stored
+    # `date_fin`, or past an already-stored `recurrence_jours`.
+    try:
+        _validate_event_dates(
+            event.date,
+            event.date_fin,
+            event.recurrence_jours,
+            event.recurrence_fin,
+            require_date=True,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
 
     if event.statut == EventStatus.publie and (
         event.titre is None or (event.date is None and not event.is_permanent)

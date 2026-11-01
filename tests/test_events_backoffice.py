@@ -289,6 +289,7 @@ def test_create_event_rejects_date_fin_without_date(client, redacteur_token):
         headers=headers,
     )
     assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "date_fin"
 
 
 def test_create_event_rejects_date_fin_before_date(client, redacteur_token):
@@ -303,6 +304,7 @@ def test_create_event_rejects_date_fin_before_date(client, redacteur_token):
         headers=headers,
     )
     assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "date_fin"
 
 
 def test_create_event_rejects_recurrence_without_date(client, redacteur_token):
@@ -313,6 +315,7 @@ def test_create_event_rejects_recurrence_without_date(client, redacteur_token):
         headers=headers,
     )
     assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "recurrence_jours"
 
 
 def test_create_event_rejects_recurrence_and_multi_day_range_together(client, redacteur_token):
@@ -328,6 +331,7 @@ def test_create_event_rejects_recurrence_and_multi_day_range_together(client, re
         headers=headers,
     )
     assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "date_fin"
 
 
 def test_create_event_rejects_recurrence_fin_before_date(client, redacteur_token):
@@ -343,6 +347,7 @@ def test_create_event_rejects_recurrence_fin_before_date(client, redacteur_token
         headers=headers,
     )
     assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "recurrence_fin"
 
 
 def test_create_event_rejects_invalid_recurrence_jours_values(client, redacteur_token):
@@ -357,6 +362,7 @@ def test_create_event_rejects_invalid_recurrence_jours_values(client, redacteur_
         headers=headers,
     )
     assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "recurrence_jours"
 
 
 def test_create_event_rejects_recurrence_fin_before_date_without_recurrence_jours(client, redacteur_token):
@@ -371,6 +377,7 @@ def test_create_event_rejects_recurrence_fin_before_date_without_recurrence_jour
         headers=headers,
     )
     assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "recurrence_fin"
 
 
 def test_create_event_accepts_weekly_recurrence(client, redacteur_token):
@@ -389,3 +396,77 @@ def test_create_event_accepts_weekly_recurrence(client, redacteur_token):
     assert response.status_code == 201
     body = response.json()
     assert body["recurrence_jours"] == "2,5"
+
+
+def test_patch_date_fin_only_succeeds_when_event_already_has_stored_date(
+    client, redacteur_token
+):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/patch-date-fin-only",
+            "titre": "Expo",
+            "date": "2026-12-05T10:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+
+    response = client.patch(
+        f"/backoffice/events/{event_id}",
+        json={"date_fin": "2026-12-08T18:00:00"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["date_fin"] == "2026-12-08T18:00:00"
+
+
+def test_patch_date_rejected_when_merged_state_violates_date_fin_order(
+    client, redacteur_token
+):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/patch-date-after-fin",
+            "titre": "Expo2",
+            "date": "2026-12-05T10:00:00",
+            "date_fin": "2026-12-08T18:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+
+    response = client.patch(
+        f"/backoffice/events/{event_id}",
+        json={"date": "2026-12-10T10:00:00"},
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
+def test_patch_merged_state_rejects_recurrence_plus_multi_day_range(
+    client, redacteur_token
+):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/patch-recurrence-plus-range",
+            "titre": "Marche",
+            "date": "2026-12-05T10:00:00",
+            "recurrence_jours": "2,5",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+
+    # Payload doesn't clear recurrence_jours, so the merged state ends up
+    # with both a multi-day range AND recurrence set.
+    response = client.patch(
+        f"/backoffice/events/{event_id}",
+        json={"date": "2026-12-05T10:00:00", "date_fin": "2026-12-06T18:00:00"},
+        headers=headers,
+    )
+    assert response.status_code == 422
