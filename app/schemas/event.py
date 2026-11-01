@@ -118,3 +118,12 @@ class EventOut(BaseModel):
     featured_editorial: bool
     is_permanent: bool
     tags: list[TagOut]
+
+
+class EventCalendarOut(EventOut):
+    """EventOut plus the resolved per-day occurrences for the queried month
+    (see app/services/occurrences.py:occurrences_in_range). Only used by the
+    `view=calendar` branch of GET /events.
+    """
+
+    occurrences: list[dict]

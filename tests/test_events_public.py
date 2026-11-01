@@ -432,6 +432,92 @@ def test_list_events_rejects_out_of_range_month(client):
     assert response.status_code == 422
 
 
+def test_calendar_view_includes_each_day_of_multi_day_event(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/cal-multi-1",
+            "titre": "Marche de Noel",
+            "date": "2026-12-05T10:00:00",
+            "date_fin": "2026-12-08T18:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "calendar", "month": 12, "year": 2026})
+    assert response.status_code == 200
+    item = next(i for i in response.json()["items"] if i["id"] == event_id)
+    assert [o["date"] for o in item["occurrences"]] == [
+        "2026-12-05", "2026-12-06", "2026-12-07", "2026-12-08",
+    ]
+
+
+def test_calendar_view_includes_multi_day_event_spanning_into_month_from_before(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/cal-multi-2",
+            "titre": "Expo",
+            "date": "2026-11-29T10:00:00",
+            "date_fin": "2026-12-03T18:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    december = client.get("/events", params={"view": "calendar", "month": 12, "year": 2026})
+    item = next(i for i in december.json()["items"] if i["id"] == event_id)
+    assert [o["date"] for o in item["occurrences"]] == ["2026-12-01", "2026-12-02", "2026-12-03"]
+
+
+def test_calendar_view_recurring_event_respects_recurrence_fin_mid_month(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/cal-rec-1",
+            "titre": "Marche hebdo",
+            "date": "2026-11-03T19:00:00",  # Tuesday
+            "recurrence_jours": "2",
+            "recurrence_fin": "2026-11-17T00:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "calendar", "month": 11, "year": 2026})
+    item = next(i for i in response.json()["items"] if i["id"] == event_id)
+    occurrence_dates = [o["date"] for o in item["occurrences"]]
+    assert "2026-11-17" in occurrence_dates
+    assert "2026-11-24" not in occurrence_dates
+
+
+def test_week_view_orders_by_next_occurrence_for_recurring_event(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/week-rec-1",
+            "titre": "Marche hebdo 2",
+            "date": "2026-01-06T19:00:00",  # far in the past relative to "now" in tests
+            "recurrence_jours": "1,2,3,4,5,6,7",  # every day, so always has a near-future occurrence
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    response = client.get("/events", params={"view": "week"})
+    assert response.status_code == 200
+    assert any(i["id"] == event_id for i in response.json()["items"])
+
+
 def test_mixed_sort_with_no_permanent_events_is_plain_date_order(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     created = client.post(

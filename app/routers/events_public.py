@@ -1,9 +1,10 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
@@ -13,8 +14,9 @@ from app.models.event import Event, EventStatus, EventTag
 from app.models.tag import Tag
 from app.models.user import User
 from app.models.vote import Vote
-from app.schemas.event import EventOut
+from app.schemas.event import EventCalendarOut, EventOut
 from app.schemas.vote import VoteOut
+from app.services.occurrences import next_occurrence, occurrences_in_range
 from app.services.votes import get_or_create_anon_id
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -48,7 +50,7 @@ def _get_published_event_or_404(event_id: int, session: Session) -> Event:
     return event
 
 
-@router.get("", response_model=EventListOut)
+@router.get("")
 def list_events(
     view: Literal["mixed", "calendar", "permanent", "week"] = Query(default="mixed"),
     month: int | None = Query(default=None, ge=1, le=12),
@@ -58,7 +60,7 @@ def list_events(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_session),
-) -> EventListOut:
+):
     query = select(Event).where(Event.statut == EventStatus.publie)
 
     if tag:
@@ -90,8 +92,40 @@ def list_events(
             start_of_next_month = datetime(resolved_year + 1, 1, 1)
         else:
             start_of_next_month = datetime(resolved_year, resolved_month + 1, 1)
-        query = query.where(Event.date >= start_of_month).where(
-            Event.date < start_of_next_month
+        # Widened window: an event's raw `date` alone is not enough to tell
+        # whether it has an occurrence inside [start_of_month,
+        # start_of_next_month) once multi-day ranges and recurrence are
+        # involved. An event can never *start* on or after the end of this
+        # month and still have an occurrence inside it, so `Event.date <
+        # start_of_next_month` stays a hard upper bound in all cases. Beyond
+        # that, which events whose `date` falls BEFORE the month can still
+        # reach into it depends on the event's kind:
+        #   - recurring (recurrence_jours set): its occurrences continue
+        #     indefinitely unless `recurrence_fin` caps them, so it reaches
+        #     into this month unless `recurrence_fin` already ended before
+        #     the month started.
+        #   - multi-day (date_fin set, no recurrence): it reaches into this
+        #     month only if its range's end (`date_fin`) is on or after the
+        #     start of the month.
+        #   - plain single-day (neither set): it can only land in this month
+        #     if its single `date` itself is on or after the start of the
+        #     month (no range/recurrence to carry it forward).
+        query = query.where(Event.date < start_of_next_month).where(
+            or_(
+                and_(
+                    Event.recurrence_jours.is_not(None),
+                    or_(
+                        Event.recurrence_fin.is_(None),
+                        Event.recurrence_fin >= start_of_month,
+                    ),
+                ),
+                and_(Event.date_fin.is_not(None), Event.date_fin >= start_of_month),
+                and_(
+                    Event.date_fin.is_(None),
+                    Event.recurrence_jours.is_(None),
+                    Event.date >= start_of_month,
+                ),
+            )
         )
     elif view == "week":
         now = datetime.now(timezone.utc)
@@ -100,8 +134,19 @@ def list_events(
         start_of_today = datetime(now.year, now.month, now.day)
         query = (
             query.where(Event.is_permanent.is_(False))
-            .where(Event.date >= start_of_today)
             .where(Event.date < start_of_today + timedelta(days=7))
+            .where(
+                or_(
+                    Event.date >= start_of_today,
+                    and_(
+                        Event.recurrence_jours.is_not(None),
+                        or_(
+                            Event.recurrence_fin.is_(None),
+                            Event.recurrence_fin >= start_of_today,
+                        ),
+                    ),
+                )
+            )
         )
 
     if view == "mixed" and sort not in ("popularite", "nouveaute"):
@@ -142,13 +187,14 @@ def list_events(
         offset = (page - 1) * page_size
         events = merged[offset : offset + page_size]
     else:
-        if view == "week":
-            query = query.order_by(Event.date.asc())
-        elif sort == "popularite":
+        if sort == "popularite":
             query = query.order_by(Event.likes_count.desc())
         elif sort == "nouveaute":
             query = query.order_by(Event.id.desc())
-        else:
+        elif view != "week":
+            # "week" is sorted in Python below, by next_occurrence rather
+            # than raw Event.date, since a recurring event's next occurrence
+            # can differ from its stored `date`.
             query = query.order_by(Event.date.asc())
 
         if view == "mixed":
@@ -156,6 +202,35 @@ def list_events(
             query = query.offset(offset).limit(page_size)
 
         events = session.exec(query).all()
+
+        if view == "week" and sort not in ("popularite", "nouveaute"):
+            now = datetime.now(timezone.utc)
+            start_of_today = date(now.year, now.month, now.day)
+            events = sorted(
+                events,
+                key=lambda event: next_occurrence(event, start_of_today) or date.max,
+            )
+
+    if view == "calendar":
+        # EventListOut.items is declared as list[EventOut]: dumping an
+        # EventCalendarOut (a subclass with an extra `occurrences` field)
+        # through that declared type — even via model_construct, which skips
+        # validation but not pydantic's dump-by-declared-type behavior for
+        # nested models — silently drops `occurrences`. So the calendar
+        # branch bypasses EventListOut/response_model entirely and returns a
+        # plain dict; having already dropped response_model from the route
+        # decorator, FastAPI serializes each EventCalendarOut via its own
+        # .model_dump(), keeping `occurrences`.
+        calendar_items = [
+            EventCalendarOut(
+                **EventOut.model_validate(event, from_attributes=True).model_dump(),
+                occurrences=occurrences_in_range(
+                    event, start_of_month.date(), start_of_next_month.date()
+                ),
+            )
+            for event in events
+        ]
+        return {"items": calendar_items, "page": page, "page_size": page_size}
 
     items = [EventOut.model_validate(event, from_attributes=True) for event in events]
     return EventListOut(items=items, page=page, page_size=page_size)
