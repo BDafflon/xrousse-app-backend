@@ -223,3 +223,11 @@ def test_create_event_rejects_timezone_aware_date(client, redacteur_token):
         headers=headers,
     )
     assert response.status_code == 422
+
+
+def test_create_event_defaults_is_permanent_false(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events", json={"source_url": "https://example.com/perm1"}, headers=headers
+    )
+    assert created.json()["is_permanent"] is False

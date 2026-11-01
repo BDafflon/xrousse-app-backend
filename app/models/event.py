@@ -41,5 +41,6 @@ class Event(SQLModel, table=True):
     created_by_id: int = Field(foreign_key="user.id")
     likes_count: int = Field(default=0)
     featured_editorial: bool = Field(default=False)
+    is_permanent: bool = Field(default=False)
 
     tags: list[Tag] = Relationship(link_model=EventTag)

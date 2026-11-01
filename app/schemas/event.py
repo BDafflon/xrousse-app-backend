@@ -41,4 +41,5 @@ class EventOut(BaseModel):
     created_by_id: int
     likes_count: int
     featured_editorial: bool
+    is_permanent: bool
     tags: list[TagOut]
