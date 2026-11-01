@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, sta
 from app.auth.dependencies import require_role
 from app.config import get_settings
 from app.models.user import Role
-from app.services.storage import UploadError, get_image, upload_image
+from app.services.storage import UploadError, get_image, upload_image, upload_image_pair
 
 router = APIRouter(tags=["uploads"])
 
@@ -29,11 +29,20 @@ def _require_s3_configured() -> None:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_role(Role.admin, Role.redacteur))],
 )
-async def create_upload(file: UploadFile) -> dict:
+async def create_upload(file: UploadFile, thumbnail: UploadFile | None = None) -> dict:
     _require_s3_configured()
     content = await file.read()
+    content_type = file.content_type or "application/octet-stream"
     try:
-        key = upload_image(content, file.content_type or "application/octet-stream")
+        if thumbnail is not None:
+            key = upload_image_pair(
+                content,
+                content_type,
+                await thumbnail.read(),
+                thumbnail.content_type or "application/octet-stream",
+            )
+        else:
+            key = upload_image(content, content_type)
     except UploadError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     return {"url": f"/uploads/{key}"}

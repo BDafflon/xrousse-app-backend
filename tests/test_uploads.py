@@ -80,3 +80,25 @@ def test_upload_returns_503_when_s3_not_configured(client, redacteur_token):
         headers={"Authorization": f"Bearer {redacteur_token}"},
     )
     assert response.status_code == 503
+
+
+def test_upload_with_thumbnail_uses_pair(client, redacteur_token, monkeypatch):
+    monkeypatch.setattr("app.routers.uploads._require_s3_configured", lambda: None)
+    calls = {}
+
+    def fake_pair(full, full_type, thumb, thumb_type):
+        calls["args"] = (full, full_type, thumb, thumb_type)
+        return "events/abc_full.jpg"
+
+    monkeypatch.setattr("app.routers.uploads.upload_image_pair", fake_pair)
+    response = client.post(
+        "/backoffice/uploads",
+        files={
+            "file": ("a.jpg", b"big", "image/jpeg"),
+            "thumbnail": ("t.jpg", b"small", "image/jpeg"),
+        },
+        headers={"Authorization": f"Bearer {redacteur_token}"},
+    )
+    assert response.status_code == 201
+    assert response.json() == {"url": "/uploads/events/abc_full.jpg"}
+    assert calls["args"] == (b"big", "image/jpeg", b"small", "image/jpeg")
