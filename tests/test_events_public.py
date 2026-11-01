@@ -475,6 +475,26 @@ def test_calendar_view_includes_multi_day_event_spanning_into_month_from_before(
     assert [o["date"] for o in item["occurrences"]] == ["2026-12-01", "2026-12-02", "2026-12-03"]
 
 
+def test_calendar_view_excludes_days_of_multi_day_event_that_spill_into_next_month(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/cal-multi-3",
+            "titre": "Reveillon",
+            "date": "2026-12-30T10:00:00",
+            "date_fin": "2027-01-02T18:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+
+    december = client.get("/events", params={"view": "calendar", "month": 12, "year": 2026})
+    item = next(i for i in december.json()["items"] if i["id"] == event_id)
+    assert [o["date"] for o in item["occurrences"]] == ["2026-12-30", "2026-12-31"]
+
+
 def test_calendar_view_recurring_event_respects_recurrence_fin_mid_month(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     created = client.post(
