@@ -5,12 +5,12 @@ from sqlmodel import Session, select
 
 from app.auth.dependencies import get_current_user, require_role
 from app.db import get_session
-from app.models.event import Event, EventStatus
+from app.models.event import Event, EventStatus, EventVisibility
 from app.models.tag import Tag
 from app.models.user import Role, User
-from app.models.vote import Vote
 from app.schemas.event import EventCreate, EventOut, EventUpdate, _validate_event_dates
 from app.services.alerts import trigger_immediate_alerts
+from app.services.events import delete_event_cascade
 
 router = APIRouter(
     prefix="/backoffice/events",
@@ -19,9 +19,13 @@ router = APIRouter(
 )
 
 
-def _get_event_or_404(event_id: int, session: Session) -> Event:
+def _get_event_or_404(event_id: int, user: User, session: Session) -> Event:
     event = session.get(Event, event_id)
-    if event is None:
+    # Users' private events are visible to admins only (moderation); for
+    # redacteurs they don't exist (404, not 403).
+    if event is None or (
+        event.visibilite == EventVisibility.prive and user.role != Role.admin
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
@@ -39,16 +43,24 @@ def _resolve_tags(tag_ids: list[int], session: Session) -> list[Tag]:
 def list_events(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[Event]:
     offset = (page - 1) * page_size
-    events = session.exec(select(Event).offset(offset).limit(page_size)).all()
+    query = select(Event)
+    if current_user.role != Role.admin:
+        query = query.where(Event.visibilite == EventVisibility.public)
+    events = session.exec(query.order_by(Event.id).offset(offset).limit(page_size)).all()
     return list(events)
 
 
 @router.get("/{event_id}", response_model=EventOut)
-def get_event(event_id: int, session: Session = Depends(get_session)) -> Event:
-    return _get_event_or_404(event_id, session)
+def get_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Event:
+    return _get_event_or_404(event_id, current_user, session)
 
 
 @router.post("", response_model=EventOut, status_code=status.HTTP_201_CREATED)
@@ -82,9 +94,10 @@ def create_event(
 def update_event(
     event_id: int,
     data: EventUpdate,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Event:
-    event = _get_event_or_404(event_id, session)
+    event = _get_event_or_404(event_id, current_user, session)
     update_data = data.model_dump(exclude_unset=True, exclude={"tag_ids"})
     for field, value in update_data.items():
         setattr(event, field, value)
@@ -124,8 +137,26 @@ def update_event(
 
 
 @router.post("/{event_id}/publish", response_model=EventOut)
-def publish_event(event_id: int, session: Session = Depends(get_session)) -> Event:
-    event = _get_event_or_404(event_id, session)
+def publish_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_event_or_404(event_id, current_user, session)
+    # User proposals go through /backoffice/moderation (admin only).
+    if event.statut in (EventStatus.en_moderation, EventStatus.refuse) and (
+        current_user.role != Role.admin
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seul un admin peut moderer une proposition utilisateur",
+        )
+    if event.visibilite == EventVisibility.prive:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Un event prive ne peut pas etre publie",
+        )
+    event.motif_refus = None
     if event.titre is None or (event.date is None and not event.is_permanent):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -147,8 +178,12 @@ def publish_event(event_id: int, session: Session = Depends(get_session)) -> Eve
 
 
 @router.post("/{event_id}/feature", response_model=EventOut)
-def feature_event(event_id: int, session: Session = Depends(get_session)) -> Event:
-    event = _get_event_or_404(event_id, session)
+def feature_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_event_or_404(event_id, current_user, session)
     event.featured_editorial = not event.featured_editorial
     session.add(event)
     session.commit()
@@ -157,8 +192,12 @@ def feature_event(event_id: int, session: Session = Depends(get_session)) -> Eve
 
 
 @router.post("/{event_id}/unpublish", response_model=EventOut)
-def unpublish_event(event_id: int, session: Session = Depends(get_session)) -> Event:
-    event = _get_event_or_404(event_id, session)
+def unpublish_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_event_or_404(event_id, current_user, session)
     event.statut = EventStatus.brouillon
     session.add(event)
     session.commit()
@@ -167,18 +206,10 @@ def unpublish_event(event_id: int, session: Session = Depends(get_session)) -> E
 
 
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_event(event_id: int, session: Session = Depends(get_session)) -> None:
-    event = _get_event_or_404(event_id, session)
-    # vote.event_id has no ON DELETE rule and no ORM cascade (see
-    # alembic/versions/0004_create_votes.py), so delete child votes first to
-    # avoid a FK violation (500 in Postgres, now also enforced in SQLite tests).
-    votes = session.exec(select(Vote).where(Vote.event_id == event_id)).all()
-    for vote in votes:
-        session.delete(vote)
-    # Flush the vote deletes first: there's no ORM relationship between Vote
-    # and Event, so without an explicit flush here SQLAlchemy's unit-of-work
-    # may order the event DELETE before the votes' in the same flush and trip
-    # the FK constraint.
-    session.flush()
-    session.delete(event)
-    session.commit()
+def delete_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> None:
+    event = _get_event_or_404(event_id, current_user, session)
+    delete_event_cascade(event, session)

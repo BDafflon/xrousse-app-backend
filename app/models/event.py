@@ -8,7 +8,19 @@ from app.models.tag import Tag
 
 class EventStatus(str, Enum):
     brouillon = "brouillon"
+    # Public event proposed by a user, waiting for an admin's decision.
+    en_moderation = "en_moderation"
+    # Public proposal rejected by an admin (see Event.motif_refus).
+    refuse = "refuse"
     publie = "publie"
+
+
+class EventVisibility(str, Enum):
+    # Visible by its creator only. A private event never leaves `brouillon`,
+    # so none of the public queries (which all filter statut == publie) can
+    # ever expose it.
+    prive = "prive"
+    public = "public"
 
 
 class EventTag(SQLModel, table=True):
@@ -46,5 +58,7 @@ class Event(SQLModel, table=True):
     likes_count: int = Field(default=0)
     featured_editorial: bool = Field(default=False)
     is_permanent: bool = Field(default=False)
+    visibilite: EventVisibility = Field(default=EventVisibility.public)
+    motif_refus: str | None = Field(default=None)
 
     tags: list[Tag] = Relationship(link_model=EventTag)

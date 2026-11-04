@@ -5,6 +5,8 @@ from app.auth.dependencies import require_role
 from app.auth.security import hash_password
 from app.db import get_session
 from app.models.event import Event
+from app.models.event_share import EventShare
+from app.models.saved_event import SavedEvent
 from app.models.subscription import Subscription
 from app.models.user import Role, User
 from app.models.vote import Vote
@@ -94,5 +96,11 @@ def delete_user(user_id: int, session: Session = Depends(get_session)) -> None:
             ),
         )
 
+    # Bookmarks and shares received by this user are not authored content:
+    # drop them with the account.
+    for model in (SavedEvent, EventShare):
+        for row in session.exec(select(model).where(model.user_id == user_id)).all():
+            session.delete(row)
+    session.flush()
     session.delete(user)
     session.commit()

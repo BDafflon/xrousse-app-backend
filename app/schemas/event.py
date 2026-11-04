@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, NaiveDatetime, model_validator
 from pydantic_core import InitErrorDetails, ValidationError
 
-from app.models.event import EventStatus
+from app.models.event import EventStatus, EventVisibility
 from app.schemas.tag import TagOut
 
 
@@ -195,6 +195,8 @@ class EventOut(BaseModel):
     likes_count: int
     featured_editorial: bool
     is_permanent: bool
+    visibilite: EventVisibility
+    motif_refus: str | None
     tags: list[TagOut]
 
 
@@ -205,3 +207,62 @@ class EventCalendarOut(EventOut):
     """
 
     occurrences: list[dict]
+
+
+class UserEventCreate(BaseModel):
+    """Event proposed by a regular user via POST /me/events.
+
+    Unlike the backoffice `EventCreate`, `source_url` is optional (a private
+    memo has no source) and `visibilite` decides the workflow: `prive` stays
+    a private draft, `public` is sent to admin moderation.
+    """
+
+    titre: str
+    description: str | None = None
+    source_url: str | None = None
+    date: NaiveDatetime | None = None
+    date_fin: NaiveDatetime | None = None
+    recurrence_jours: str | None = None
+    recurrence_fin: NaiveDatetime | None = None
+    lieu: str | None = None
+    image_url: str | None = None
+    tag_ids: list[int] = []
+    is_permanent: bool = False
+    visibilite: EventVisibility = EventVisibility.prive
+
+    @model_validator(mode="after")
+    def _validate_dates(self) -> "UserEventCreate":
+        try:
+            _validate_event_dates(
+                self.date,
+                self.date_fin,
+                self.recurrence_jours,
+                self.recurrence_fin,
+                require_date=True,
+            )
+        except EventDateError as exc:
+            _raise_as_field_error("UserEventCreate", exc)
+        return self
+
+
+class UserEventUpdate(EventUpdate):
+    """PATCH body for /me/events/{id}; adds the ability to switch visibility."""
+
+    visibilite: EventVisibility | None = None
+
+
+class ModerationEventOut(EventOut):
+    created_by_email: str
+
+
+class RejectIn(BaseModel):
+    motif: str
+
+
+class ShareIn(BaseModel):
+    email: str
+
+
+class ShareOut(BaseModel):
+    user_id: int
+    email: str
