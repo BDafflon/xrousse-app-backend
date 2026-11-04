@@ -75,6 +75,42 @@ def test_delete_event(client, redacteur_token):
     assert response.status_code == 204
 
 
+def test_delete_event_is_soft_and_restorable(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events", json={"source_url": "https://example.com/e6-soft"}, headers=headers
+    )
+    event_id = created.json()["id"]
+
+    client.delete(f"/backoffice/events/{event_id}", headers=headers)
+
+    # The event still exists (soft-deleted) and is directly fetchable...
+    detail = client.get(f"/backoffice/events/{event_id}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["is_deleted"] is True
+
+    # ...but is excluded from the default (non-trash) list.
+    listing = client.get("/backoffice/events", headers=headers)
+    assert event_id not in [e["id"] for e in listing.json()]
+
+    # It reappears when explicitly including deleted events.
+    listing_with_deleted = client.get("/backoffice/events?include_deleted=true", headers=headers)
+    assert event_id in [e["id"] for e in listing_with_deleted.json()]
+
+    restored = client.post(f"/backoffice/events/{event_id}/restore", headers=headers)
+    assert restored.status_code == 200
+    assert restored.json()["is_deleted"] is False
+
+    listing_after_restore = client.get("/backoffice/events", headers=headers)
+    assert event_id in [e["id"] for e in listing_after_restore.json()]
+
+
+def test_restore_event_404(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    response = client.post("/backoffice/events/9999/restore", headers=headers)
+    assert response.status_code == 404
+
+
 def test_get_event_detail(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     created = client.post("/backoffice/events", json={"source_url": "https://example.com/e7"}, headers=headers)
@@ -130,9 +166,10 @@ def test_create_event_unauthenticated(client):
 
 
 def test_delete_event_with_vote_succeeds(client, redacteur_token):
-    # Regression for I1: deleting an event that has a vote must not 500 in
-    # Postgres (vote.event_id has no ON DELETE rule); the route now deletes
-    # child votes first.
+    # Deleting an event that has a vote must still succeed. This was
+    # originally a regression test for a 500 under hard delete (vote.event_id
+    # has no ON DELETE rule); delete is now a soft delete (sets is_deleted),
+    # which never touches the vote rows at all.
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     created = client.post(
         "/backoffice/events",

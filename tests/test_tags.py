@@ -53,3 +53,76 @@ def test_seeded_tags_have_expected_families(client):
     assert by_name["Concert"] == "culture"
     assert by_name["Enfants"] == "enfant"
     assert by_name["Solidarité"] == "solidarite"
+
+
+def test_delete_tag_requires_auth(client):
+    response = client.post(
+        "/tags", json={"nom": "Vide-greniers"}, headers={}
+    )
+    assert response.status_code == 401
+
+
+def test_delete_tag_requires_admin(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post("/tags", json={"nom": "Vide-greniers"}, headers=headers)
+    tag_id = created.json()["id"]
+
+    response = client.delete(f"/tags/{tag_id}", headers=headers)
+    assert response.status_code == 403
+
+
+def test_delete_tag_as_admin_hides_it_from_default_list(client, admin_token, redacteur_token):
+    created = client.post(
+        "/tags",
+        json={"nom": "Vide-greniers"},
+        headers={"Authorization": f"Bearer {redacteur_token}"},
+    )
+    tag_id = created.json()["id"]
+
+    response = client.delete(
+        f"/tags/{tag_id}", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert response.status_code == 204
+
+    names = [t["nom"] for t in client.get("/tags").json()]
+    assert "Vide-greniers" not in names
+
+    names_with_deleted = [
+        t["nom"] for t in client.get("/tags?include_deleted=true").json()
+    ]
+    assert "Vide-greniers" in names_with_deleted
+
+
+def test_restore_tag_as_admin(client, admin_token, redacteur_token):
+    created = client.post(
+        "/tags",
+        json={"nom": "Vide-greniers"},
+        headers={"Authorization": f"Bearer {redacteur_token}"},
+    )
+    tag_id = created.json()["id"]
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    client.delete(f"/tags/{tag_id}", headers=admin_headers)
+    response = client.post(f"/tags/{tag_id}/restore", headers=admin_headers)
+    assert response.status_code == 200
+    assert response.json()["is_deleted"] is False
+
+    names = [t["nom"] for t in client.get("/tags").json()]
+    assert "Vide-greniers" in names
+
+
+def test_restore_tag_requires_admin(client, admin_token, redacteur_token):
+    created = client.post(
+        "/tags",
+        json={"nom": "Vide-greniers"},
+        headers={"Authorization": f"Bearer {redacteur_token}"},
+    )
+    tag_id = created.json()["id"]
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    client.delete(f"/tags/{tag_id}", headers=admin_headers)
+    response = client.post(
+        f"/tags/{tag_id}/restore",
+        headers={"Authorization": f"Bearer {redacteur_token}"},
+    )
+    assert response.status_code == 403

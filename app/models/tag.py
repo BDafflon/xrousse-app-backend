@@ -18,3 +18,4 @@ class Tag(SQLModel, table=True):
     slug: str = Field(unique=True, index=True)
     is_predefined: bool = Field(default=False)
     famille: TagFamily = Field(default=TagFamily.autre)
+    is_deleted: bool = Field(default=False)

@@ -10,7 +10,6 @@ from app.models.tag import Tag
 from app.models.user import Role, User
 from app.schemas.event import EventCreate, EventOut, EventUpdate, _validate_event_dates
 from app.services.alerts import trigger_immediate_alerts
-from app.services.events import delete_event_cascade
 from app.services.notifications import notify_new_event
 
 router = APIRouter(
@@ -44,6 +43,7 @@ def _resolve_tags(tag_ids: list[int], session: Session) -> list[Tag]:
 def list_events(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    include_deleted: bool = False,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[Event]:
@@ -51,6 +51,8 @@ def list_events(
     query = select(Event)
     if current_user.role != Role.admin:
         query = query.where(Event.visibilite == EventVisibility.public)
+    if not include_deleted:
+        query = query.where(Event.is_deleted == False)  # noqa: E712
     events = session.exec(query.order_by(Event.id).offset(offset).limit(page_size)).all()
     return list(events)
 
@@ -220,4 +222,20 @@ def delete_event(
     session: Session = Depends(get_session),
 ) -> None:
     event = _get_event_or_404(event_id, current_user, session)
-    delete_event_cascade(event, session)
+    event.is_deleted = True
+    session.add(event)
+    session.commit()
+
+
+@router.post("/{event_id}/restore", response_model=EventOut)
+def restore_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_event_or_404(event_id, current_user, session)
+    event.is_deleted = False
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event

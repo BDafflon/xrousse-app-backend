@@ -43,7 +43,7 @@ class EventListOut(BaseModel):
 
 def _get_published_event_or_404(event_id: int, session: Session) -> Event:
     event = session.get(Event, event_id)
-    if event is None or event.statut != EventStatus.publie:
+    if event is None or event.statut != EventStatus.publie or event.is_deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
@@ -61,7 +61,9 @@ def list_events(
     page_size: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_session),
 ):
-    query = select(Event).where(Event.statut == EventStatus.publie)
+    query = select(Event).where(
+        Event.statut == EventStatus.publie, Event.is_deleted == False  # noqa: E712
+    )
 
     if tag:
         query = (

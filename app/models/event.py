@@ -60,5 +60,6 @@ class Event(SQLModel, table=True):
     is_permanent: bool = Field(default=False)
     visibilite: EventVisibility = Field(default=EventVisibility.public)
     motif_refus: str | None = Field(default=None)
+    is_deleted: bool = Field(default=False)
 
     tags: list[Tag] = Relationship(link_model=EventTag)

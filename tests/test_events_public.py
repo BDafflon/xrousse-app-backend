@@ -8,6 +8,31 @@ def test_list_only_returns_published(client, redacteur_token):
     assert response.json()["items"] == []
 
 
+def test_soft_deleted_published_event_hidden_from_public(client, redacteur_token):
+    # A soft-deleted event must never be publicly visible, even if its
+    # `statut` is still "publie" (defense in depth alongside the backoffice
+    # UI, which shouldn't allow this state to persist in practice).
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={
+            "source_url": "https://example.com/f1-soft-deleted",
+            "titre": "Brocante",
+            "date": "2026-11-20T10:00:00",
+        },
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+    client.delete(f"/backoffice/events/{event_id}", headers=headers)
+
+    list_response = client.get("/events")
+    assert event_id not in [e["id"] for e in list_response.json()["items"]]
+
+    detail_response = client.get(f"/events/{event_id}")
+    assert detail_response.status_code == 404
+
+
 def test_vote_increments_likes_count(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     created = client.post(

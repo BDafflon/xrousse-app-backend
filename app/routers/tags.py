@@ -12,8 +12,13 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 
 
 @router.get("", response_model=list[TagOut])
-def list_tags(session: Session = Depends(get_session)) -> list[Tag]:
-    return list(session.exec(select(Tag)).all())
+def list_tags(
+    include_deleted: bool = False, session: Session = Depends(get_session)
+) -> list[Tag]:
+    query = select(Tag)
+    if not include_deleted:
+        query = query.where(Tag.is_deleted == False)  # noqa: E712
+    return list(session.exec(query).all())
 
 
 @router.post(
@@ -31,6 +36,38 @@ def create_tag(data: TagIn, session: Session = Depends(get_session)) -> Tag:
         )
 
     tag = Tag(nom=data.nom, slug=slug, is_predefined=False, famille=data.famille)
+    session.add(tag)
+    session.commit()
+    session.refresh(tag)
+    return tag
+
+
+@router.delete(
+    "/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_role(Role.admin))],
+)
+def delete_tag(tag_id: int, session: Session = Depends(get_session)) -> None:
+    tag = session.get(Tag, tag_id)
+    if tag is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
+
+    tag.is_deleted = True
+    session.add(tag)
+    session.commit()
+
+
+@router.post(
+    "/{tag_id}/restore",
+    response_model=TagOut,
+    dependencies=[Depends(require_role(Role.admin))],
+)
+def restore_tag(tag_id: int, session: Session = Depends(get_session)) -> Tag:
+    tag = session.get(Tag, tag_id)
+    if tag is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
+
+    tag.is_deleted = False
     session.add(tag)
     session.commit()
     session.refresh(tag)

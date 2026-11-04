@@ -197,6 +197,7 @@ class EventOut(BaseModel):
     is_permanent: bool
     visibilite: EventVisibility
     motif_refus: str | None
+    is_deleted: bool
     tags: list[TagOut]
 
 

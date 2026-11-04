@@ -14,3 +14,4 @@ class TagOut(BaseModel):
     slug: str
     is_predefined: bool
     famille: TagFamily
+    is_deleted: bool
