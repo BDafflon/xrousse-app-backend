@@ -14,6 +14,8 @@ from app.routers.events_public import router as events_public_router
 from app.routers.moderation import router as moderation_router
 from app.routers.notifications import router as notifications_router
 from app.routers.push import router as push_router
+from app.routers.reports import admin_router as reports_admin_router
+from app.routers.reports import router as reports_router
 from app.routers.rss import router as rss_router
 from app.routers.saved_events import router as saved_events_router
 from app.routers.subscriptions import router as subscriptions_router
@@ -61,7 +63,9 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(tags_router)
+app.include_router(reports_admin_router)
 app.include_router(moderation_router)
+app.include_router(reports_router)
 app.include_router(events_backoffice_router)
 app.include_router(events_me_router)
 app.include_router(notifications_router)

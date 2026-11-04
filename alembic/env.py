@@ -18,6 +18,7 @@ from app.models.new_event_tag_filter import NewEventTagFilter  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.push_token import PushToken  # noqa: F401
 from app.models.saved_event import SavedEvent  # noqa: F401
+from app.models.event_report import EventReport  # noqa: F401
 # -------------------------------------------------------------------------
 
 target_metadata = SQLModel.metadata
