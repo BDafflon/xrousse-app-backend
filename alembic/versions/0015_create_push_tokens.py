@@ -19,6 +19,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if "pushtoken" in inspector.get_table_names():
+        existing = {i["name"] for i in inspector.get_indexes("pushtoken")}
+        if "ix_pushtoken_user_id" not in existing:
+            op.create_index("ix_pushtoken_user_id", "pushtoken", ["user_id"])
+        if "ix_pushtoken_token" not in existing:
+            op.create_index("ix_pushtoken_token", "pushtoken", ["token"], unique=True)
+        return
+
     op.create_table(
         "pushtoken",
         sa.Column("id", sa.Integer(), nullable=False),

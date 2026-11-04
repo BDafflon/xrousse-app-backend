@@ -18,7 +18,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    existing = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("user")}
     for column in ("notify_in_app", "notify_email"):
+        if column in existing:
+            continue
         op.add_column(
             "user",
             sa.Column(column, sa.Boolean(), nullable=False, server_default=sa.true()),

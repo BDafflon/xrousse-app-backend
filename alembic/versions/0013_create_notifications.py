@@ -19,6 +19,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if "notification" in inspector.get_table_names():
+        existing = {i["name"] for i in inspector.get_indexes("notification")}
+        if "ix_notification_user_id" not in existing:
+            op.create_index("ix_notification_user_id", "notification", ["user_id"])
+        if "ix_notification_event_id" not in existing:
+            op.create_index("ix_notification_event_id", "notification", ["event_id"])
+        return
+
     op.create_table(
         "notification",
         sa.Column("id", sa.Integer(), nullable=False),

@@ -22,14 +22,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Opt-in: nobody starts receiving "new event" notifications by surprise.
-    op.add_column(
-        "user",
-        sa.Column("notify_new_events", sa.Boolean(), nullable=False, server_default=sa.false()),
-    )
-    op.add_column(
-        "user",
-        sa.Column("notify_event_shared", sa.Boolean(), nullable=False, server_default=sa.true()),
-    )
+    inspector = sa.inspect(op.get_bind())
+    existing = {c["name"] for c in inspector.get_columns("user")}
+    if "notify_new_events" not in existing:
+        op.add_column(
+            "user",
+            sa.Column("notify_new_events", sa.Boolean(), nullable=False, server_default=sa.false()),
+        )
+    if "notify_event_shared" not in existing:
+        op.add_column(
+            "user",
+            sa.Column("notify_event_shared", sa.Boolean(), nullable=False, server_default=sa.true()),
+        )
+    if "neweventtagfilter" in inspector.get_table_names():
+        return
     op.create_table(
         "neweventtagfilter",
         sa.Column("user_id", sa.Integer(), nullable=False),

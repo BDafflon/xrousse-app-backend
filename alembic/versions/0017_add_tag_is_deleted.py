@@ -18,6 +18,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if "is_deleted" in {c["name"] for c in sa.inspect(op.get_bind()).get_columns("tag")}:
+        return
     op.add_column(
         "tag",
         sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.false()),
