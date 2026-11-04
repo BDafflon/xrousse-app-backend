@@ -18,6 +18,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if "eventshare" in inspector.get_table_names():
+        # Table déjà présente (créée hors Alembic) : on complète uniquement les index manquants.
+        existing = {i["name"] for i in inspector.get_indexes("eventshare")}
+        if "ix_eventshare_user_id" not in existing:
+            op.create_index("ix_eventshare_user_id", "eventshare", ["user_id"])
+        if "ix_eventshare_event_id" not in existing:
+            op.create_index("ix_eventshare_event_id", "eventshare", ["event_id"])
+        return
+
     op.create_table(
         "eventshare",
         sa.Column("id", sa.Integer(), nullable=False),
