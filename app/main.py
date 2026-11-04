@@ -12,6 +12,8 @@ from app.routers.events_backoffice import router as events_backoffice_router
 from app.routers.events_me import router as events_me_router
 from app.routers.events_public import router as events_public_router
 from app.routers.moderation import router as moderation_router
+from app.routers.notifications import router as notifications_router
+from app.routers.push import router as push_router
 from app.routers.rss import router as rss_router
 from app.routers.saved_events import router as saved_events_router
 from app.routers.subscriptions import router as subscriptions_router
@@ -62,6 +64,8 @@ app.include_router(tags_router)
 app.include_router(moderation_router)
 app.include_router(events_backoffice_router)
 app.include_router(events_me_router)
+app.include_router(notifications_router)
+app.include_router(push_router)
 app.include_router(events_public_router)
 app.include_router(drafts_router)
 app.include_router(rss_router)

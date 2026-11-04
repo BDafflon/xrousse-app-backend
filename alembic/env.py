@@ -14,6 +14,8 @@ from app.models.event import Event, EventTag  # noqa: F401
 from app.models.vote import Vote  # noqa: F401
 from app.models.subscription import Subscription  # noqa: F401
 from app.models.event_share import EventShare  # noqa: F401
+from app.models.notification import Notification  # noqa: F401
+from app.models.push_token import PushToken  # noqa: F401
 from app.models.saved_event import SavedEvent  # noqa: F401
 # -------------------------------------------------------------------------
 

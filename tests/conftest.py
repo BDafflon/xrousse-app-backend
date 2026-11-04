@@ -138,3 +138,27 @@ def tag_id_fixture(session):
 
     tag = session.exec(select(Tag)).first()
     return tag.id
+
+
+@pytest.fixture(autouse=True)
+def sent_emails(monkeypatch):
+    """Never hit Resend from tests; notification emails are collected here."""
+    sent = []
+    monkeypatch.setattr(
+        "app.services.notifications.send_email",
+        lambda to, subject, html: sent.append({"to": to, "subject": subject, "html": html}),
+    )
+    return sent
+
+
+@pytest.fixture(autouse=True)
+def sent_pushes(monkeypatch):
+    """Never hit FCM from tests; pushes are collected here as {user_id, title, body, link}."""
+    sent = []
+    monkeypatch.setattr(
+        "app.services.notifications.send_push",
+        lambda session, user, title, body, link: sent.append(
+            {"user_id": user.id, "title": title, "body": body, "link": link}
+        ),
+    )
+    return sent

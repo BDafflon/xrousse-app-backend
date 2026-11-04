@@ -18,7 +18,9 @@ from app.schemas.event import (
     UserEventUpdate,
     _validate_event_dates,
 )
+from app.models.notification import NotificationType
 from app.services.events import delete_event_cascade
+from app.services.notifications import notify, notify_admins
 
 router = APIRouter(prefix="/me/events", tags=["me-events"])
 
@@ -41,6 +43,18 @@ def _resolve_tags(tag_ids: list[int], session: Session) -> list[Tag]:
     if not tag_ids:
         return []
     return list(session.exec(select(Tag).where(Tag.id.in_(tag_ids))).all())
+
+
+def _notify_submission(event: Event, author: User, session: Session) -> None:
+    notify_admins(
+        session,
+        NotificationType.proposal_submitted,
+        "Nouvelle proposition à modérer",
+        f"{author.email} propose « {event.titre} ».",
+        event=event,
+        link="/admin/moderation",
+        exclude_user_id=author.id,
+    )
 
 
 def _require_submittable(event: Event) -> None:
@@ -180,6 +194,8 @@ def create_my_event(
             status_code=status.HTTP_409_CONFLICT, detail="source_url deja utilisee"
         )
     session.refresh(event)
+    if event.statut == EventStatus.en_moderation:
+        _notify_submission(event, current_user, session)
     return event
 
 
@@ -191,6 +207,7 @@ def update_my_event(
     session: Session = Depends(get_session),
 ) -> Event:
     event = _get_own_event_or_404(event_id, current_user, session)
+    previous_statut = event.statut
     update_data = data.model_dump(exclude_unset=True, exclude={"tag_ids"})
     for field, value in update_data.items():
         setattr(event, field, value)
@@ -218,6 +235,11 @@ def update_my_event(
     session.add(event)
     session.commit()
     session.refresh(event)
+    if (
+        event.statut == EventStatus.en_moderation
+        and previous_statut != EventStatus.en_moderation
+    ):
+        _notify_submission(event, current_user, session)
     return event
 
 
@@ -281,10 +303,22 @@ def share_event(
             detail="Impossible de partager avec soi-meme",
         )
     session.add(EventShare(user_id=recipient.id, event_id=event_id))
+    newly_shared = True
     try:
         session.commit()
     except IntegrityError:
         session.rollback()
+        newly_shared = False
+    if newly_shared:
+        notify(
+            session,
+            recipient,
+            NotificationType.event_shared,
+            "Un événement a été partagé avec vous",
+            f"{current_user.email} a partagé « {event.titre} » avec vous.",
+            event=event,
+            link="/my-events/created",
+        )
     return _share_out(recipient)
 
 

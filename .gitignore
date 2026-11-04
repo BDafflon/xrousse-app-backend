@@ -6,3 +6,6 @@ venv/
 *.egg-info/
 .pytest_cache/
 .superpowers/
+
+# Firebase service-account keys (secrets)
+*firebase-adminsdk*.json

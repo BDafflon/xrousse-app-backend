@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # website access — the backend fetches objects with these credentials
     # and proxies them via GET /uploads/{key}, so images work regardless of
     # the S3 provider's DNS/website configuration.
+    # Firebase service-account JSON (raw or base64) used to send push
+    # notifications through FCM. Leave unset to disable push.
+    firebase_credentials_json: str | None = None
     s3_endpoint_url: str | None = None
     s3_access_key_id: str | None = None
     s3_secret_access_key: str | None = None

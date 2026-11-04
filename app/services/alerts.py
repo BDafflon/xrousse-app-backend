@@ -1,4 +1,5 @@
 from collections import defaultdict
+from html import escape
 from datetime import datetime
 
 from sqlmodel import Session, select
@@ -40,7 +41,7 @@ def trigger_immediate_alerts(event: Event, session: Session) -> None:
             continue
         html = (
             f"<p>Un nouvel événement correspondant à vos abonnements vient d'être "
-            f"publié : <strong>{event.titre}</strong>.</p>"
+            f"publié : <strong>{escape(event.titre)}</strong>.</p>"
             f'<p><a href="{settings.site_url}/events/{event.id}">Voir l\'événement</a></p>'
         )
         send_email(user.email, subject, html)
@@ -95,7 +96,7 @@ def send_digest_for_day(
             continue
 
         items = "".join(
-            f'<li><a href="{settings.site_url}/events/{event.id}">{event.titre}</a></li>'
+            f'<li><a href="{settings.site_url}/events/{event.id}">{escape(event.titre)}</a></li>'
             for event in matching_events
         )
         html = f"<p>Voici les événements publiés cette semaine :</p><ul>{items}</ul>"

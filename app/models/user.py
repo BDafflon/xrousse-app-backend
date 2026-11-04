@@ -15,4 +15,7 @@ class User(SQLModel, table=True):
     email: str = Field(unique=True, index=True)
     password_hash: str
     role: Role = Field(default=Role.lecteur)
+    # Preferences for event notifications (proposals, moderation, shares).
+    notify_in_app: bool = Field(default=True)
+    notify_email: bool = Field(default=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -8,7 +8,9 @@ from app.db import get_session
 from app.models.event import Event, EventStatus, EventVisibility
 from app.models.user import Role, User
 from app.schemas.event import ModerationEventOut, RejectIn
+from app.models.notification import NotificationType
 from app.services.alerts import trigger_immediate_alerts
+from app.services.notifications import notify
 
 router = APIRouter(
     prefix="/backoffice/moderation",
@@ -76,6 +78,17 @@ def approve(event_id: int, session: Session = Depends(get_session)):
         logging.getLogger(__name__).exception(
             "trigger_immediate_alerts failed for event %s", event.id
         )
+    author = session.get(User, event.created_by_id)
+    if author is not None:
+        notify(
+            session,
+            author,
+            NotificationType.proposal_approved,
+            "Votre événement a été publié",
+            f"« {event.titre} » a été validé par la modération.",
+            event=event,
+            link=f"/events/{event.id}",
+        )
     return _to_out(event, session)
 
 
@@ -93,4 +106,15 @@ def reject(event_id: int, data: RejectIn, session: Session = Depends(get_session
     session.add(event)
     session.commit()
     session.refresh(event)
+    author = session.get(User, event.created_by_id)
+    if author is not None:
+        notify(
+            session,
+            author,
+            NotificationType.proposal_rejected,
+            "Votre événement a été refusé",
+            f"« {event.titre} » n'a pas été retenu. Motif : {motif}",
+            event=event,
+            link="/my-events/created",
+        )
     return _to_out(event, session)
