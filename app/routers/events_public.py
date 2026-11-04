@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import update
 from sqlmodel import Session, func, select
 
 from app.auth.dependencies import get_current_user_optional
 from app.db import get_session
 from app.models.event import Event, EventStatus, EventTag
 from app.models.tag import Tag
-from app.models.user import User
+from app.models.user import Role, User
 from app.models.vote import Vote
 from app.schemas.event import EventCalendarOut, EventOut
 from app.schemas.vote import VoteOut
@@ -259,6 +260,30 @@ def list_events(
 @router.get("/{event_id}", response_model=EventOut)
 def get_event(event_id: int, session: Session = Depends(get_session)) -> Event:
     return _get_published_event_or_404(event_id, session)
+
+
+@router.post("/{event_id}/view", status_code=status.HTTP_204_NO_CONTENT)
+def record_event_view(
+    event_id: int,
+    current_user: User | None = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Counts one public view of a published event.
+
+    Views by admin/redacteur accounts are ignored so that editing and
+    previewing events doesn't inflate the counter. The increment is a single
+    atomic UPDATE (no read-modify-write race between concurrent viewers).
+    """
+    _get_published_event_or_404(event_id, session)
+
+    if current_user is None or current_user.role not in (Role.admin, Role.redacteur):
+        session.exec(
+            update(Event)
+            .where(Event.id == event_id)
+            .values(views_count=Event.views_count + 1)
+        )
+        session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{event_id}/vote", response_model=VoteOut)

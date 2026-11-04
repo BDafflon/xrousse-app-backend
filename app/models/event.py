@@ -56,6 +56,9 @@ class Event(SQLModel, table=True):
     statut: EventStatus = Field(default=EventStatus.brouillon)
     created_by_id: int = Field(foreign_key="user.id")
     likes_count: int = Field(default=0)
+    # Number of public detail-page views (see POST /events/{id}/view). Only
+    # exposed to admin/redacteur through BackofficeEventOut.
+    views_count: int = Field(default=0)
     featured_editorial: bool = Field(default=False)
     is_permanent: bool = Field(default=False)
     visibilite: EventVisibility = Field(default=EventVisibility.public)

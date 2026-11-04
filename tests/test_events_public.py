@@ -643,3 +643,64 @@ def test_mixed_view_sorts_past_start_recurring_event_near_top(client, redacteur_
     recurring_index = ids.index(recurring["id"])
     for future_id in future_ids:
         assert recurring_index < ids.index(future_id)
+
+
+def _publish_event(client, token, source_url):
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post(
+        "/backoffice/events",
+        json={"source_url": source_url, "titre": "Vue", "date": "2026-11-20T10:00:00"},
+        headers=headers,
+    )
+    event_id = created.json()["id"]
+    client.post(f"/backoffice/events/{event_id}/publish", headers=headers)
+    return event_id
+
+
+def test_view_increments_views_count_visible_to_backoffice_only(
+    client, redacteur_token
+):
+    event_id = _publish_event(client, redacteur_token, "https://example.com/views1")
+
+    assert client.post(f"/events/{event_id}/view").status_code == 204
+    assert client.post(f"/events/{event_id}/view").status_code == 204
+
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    detail = client.get(f"/backoffice/events/{event_id}", headers=headers)
+    assert detail.json()["views_count"] == 2
+    listing = client.get("/backoffice/events", headers=headers)
+    assert [e["views_count"] for e in listing.json() if e["id"] == event_id] == [2]
+
+    # Never leaked by the public routes.
+    assert "views_count" not in client.get(f"/events/{event_id}").json()
+    assert "views_count" not in client.get("/events").json()["items"][0]
+
+
+def test_view_by_redacteur_or_admin_not_counted(client, redacteur_token, admin_token):
+    event_id = _publish_event(client, redacteur_token, "https://example.com/views2")
+
+    for token in (redacteur_token, admin_token):
+        response = client.post(
+            f"/events/{event_id}/view", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 204
+
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    assert client.get(f"/backoffice/events/{event_id}", headers=headers).json()[
+        "views_count"
+    ] == 0
+
+
+def test_view_unpublished_event_404(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    created = client.post(
+        "/backoffice/events", json={"source_url": "https://example.com/views3"}, headers=headers
+    )
+    assert client.post(f"/events/{created.json()['id']}/view").status_code == 404
+
+
+def test_backoffice_views_count_forbidden_for_lecteur(client, lecteur_token):
+    response = client.get(
+        "/backoffice/events", headers={"Authorization": f"Bearer {lecteur_token}"}
+    )
+    assert response.status_code == 403

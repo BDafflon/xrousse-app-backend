@@ -8,7 +8,7 @@ from app.db import get_session
 from app.models.event import Event, EventStatus, EventVisibility
 from app.models.tag import Tag
 from app.models.user import Role, User
-from app.schemas.event import EventCreate, EventOut, EventUpdate, _validate_event_dates
+from app.schemas.event import BackofficeEventOut, EventCreate, EventOut, EventUpdate, _validate_event_dates
 from app.services.alerts import trigger_immediate_alerts
 from app.services.notifications import notify_new_event
 
@@ -39,7 +39,7 @@ def _resolve_tags(tag_ids: list[int], session: Session) -> list[Tag]:
     return list(tags)
 
 
-@router.get("", response_model=list[EventOut])
+@router.get("", response_model=list[BackofficeEventOut])
 def list_events(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -57,7 +57,7 @@ def list_events(
     return list(events)
 
 
-@router.get("/{event_id}", response_model=EventOut)
+@router.get("/{event_id}", response_model=BackofficeEventOut)
 def get_event(
     event_id: int,
     current_user: User = Depends(get_current_user),

@@ -201,6 +201,12 @@ class EventOut(BaseModel):
     tags: list[TagOut]
 
 
+class BackofficeEventOut(EventOut):
+    """EventOut plus admin/redacteur-only stats (never sent by public routes)."""
+
+    views_count: int
+
+
 class EventCalendarOut(EventOut):
     """EventOut plus the resolved per-day occurrences for the queried month
     (see app/services/occurrences.py:occurrences_in_range). Only used by the
