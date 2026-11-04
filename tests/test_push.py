@@ -88,3 +88,14 @@ def test_dead_tokens_are_pruned(session, lecteur_token, monkeypatch):
     monkeypatch.setattr(messaging, "send", boom)
     push_service.send_push(session, user, "t", "b", "/")
     assert session.exec(select(PushToken)).all() == []
+
+
+def test_message_shape_per_platform():
+    from app.models.push_token import PushToken
+
+    web = push_service._build_message(PushToken(user_id=1, token=TOKEN, platform="web"), "T", "B", "/x")
+    assert web.notification is None and web.data["link"] == "/x"
+    for platform in ("android", "ios"):
+        msg = push_service._build_message(PushToken(user_id=1, token=TOKEN, platform=platform), "T", "B", None)
+        assert msg.notification.title == "T" and msg.data["link"] == "/"
+        assert msg.apns.payload.aps.sound == "default"

@@ -9,6 +9,7 @@ class NotificationType(str, Enum):
     proposal_approved = "proposal_approved"  # to the author
     proposal_rejected = "proposal_rejected"  # to the author
     event_shared = "event_shared"  # to the recipient
+    event_published = "event_published"  # new public event, to opted-in users
 
 
 class Notification(SQLModel, table=True):

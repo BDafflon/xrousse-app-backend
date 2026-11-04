@@ -11,6 +11,7 @@ from app.models.user import Role, User
 from app.schemas.event import EventCreate, EventOut, EventUpdate, _validate_event_dates
 from app.services.alerts import trigger_immediate_alerts
 from app.services.events import delete_event_cascade
+from app.services.notifications import notify_new_event
 
 router = APIRouter(
     prefix="/backoffice/events",
@@ -167,11 +168,18 @@ def publish_event(
     session.commit()
     session.refresh(event)
 
+    emailed: set[int] = set()
     try:
-        trigger_immediate_alerts(event, session)
+        emailed = trigger_immediate_alerts(event, session) or set()
     except Exception:
         logging.getLogger(__name__).exception(
             "trigger_immediate_alerts failed for event %s", event.id
+        )
+    try:
+        notify_new_event(session, event, already_emailed=emailed)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "notify_new_event failed for event %s", event.id
         )
 
     return event

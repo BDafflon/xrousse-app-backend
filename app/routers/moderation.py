@@ -10,7 +10,7 @@ from app.models.user import Role, User
 from app.schemas.event import ModerationEventOut, RejectIn
 from app.models.notification import NotificationType
 from app.services.alerts import trigger_immediate_alerts
-from app.services.notifications import notify
+from app.services.notifications import notify, notify_new_event
 
 router = APIRouter(
     prefix="/backoffice/moderation",
@@ -72,11 +72,18 @@ def approve(event_id: int, session: Session = Depends(get_session)):
     session.commit()
     session.refresh(event)
 
+    emailed: set[int] = set()
     try:
-        trigger_immediate_alerts(event, session)
+        emailed = trigger_immediate_alerts(event, session) or set()
     except Exception:
         logging.getLogger(__name__).exception(
             "trigger_immediate_alerts failed for event %s", event.id
+        )
+    try:
+        notify_new_event(session, event, already_emailed=emailed)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "notify_new_event failed for event %s", event.id
         )
     author = session.get(User, event.created_by_id)
     if author is not None:

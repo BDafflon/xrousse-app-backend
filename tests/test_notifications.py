@@ -100,9 +100,12 @@ def test_preferences_default_and_update(client, lecteur_token):
     assert client.get("/me/notifications/preferences", headers=h).json() == {
         "notify_in_app": True,
         "notify_email": True,
+        "notify_new_events": False,
+        "notify_event_shared": True,
+        "new_event_tag_ids": [],
     }
     r = client.put("/me/notifications/preferences", json={"notify_in_app": False, "notify_email": True}, headers=h)
-    assert r.json() == {"notify_in_app": False, "notify_email": True}
+    assert r.json()["notify_in_app"] is False and r.json()["notify_email"] is True
     assert client.get("/me/notifications/preferences", headers=h).json()["notify_in_app"] is False
 
 

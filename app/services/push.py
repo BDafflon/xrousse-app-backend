@@ -55,6 +55,10 @@ def _build_message(token: PushToken, title: str, body: str, link: str | None):
         notification=messaging.Notification(title=title, body=body),
         data=data,
         android=messaging.AndroidConfig(priority="high"),
+        apns=messaging.APNSConfig(
+            headers={"apns-priority": "10"},
+            payload=messaging.APNSPayload(aps=messaging.Aps(sound="default")),
+        ),
     )
 
 

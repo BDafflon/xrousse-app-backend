@@ -11,14 +11,17 @@ from app.models.user import User
 from app.services.email import send_email
 
 
-def trigger_immediate_alerts(event: Event, session: Session) -> None:
+def trigger_immediate_alerts(event: Event, session: Session) -> set[int]:
     """Send an immediate email to every user subscribed (mode=immediat) to
     any tag on `event`. Intended to be called synchronously right after an
     event is published (e.g. from the backoffice publish endpoint).
+
+    Returns the ids of the users emailed, so the "new event" notifications
+    don't email them a second time.
     """
     tag_ids = [tag.id for tag in event.tags]
     if not tag_ids:
-        return
+        return set()
 
     subscriptions = session.exec(
         select(Subscription).where(
@@ -27,7 +30,7 @@ def trigger_immediate_alerts(event: Event, session: Session) -> None:
         )
     ).all()
     if not subscriptions:
-        return
+        return set()
 
     user_ids = {subscription.user_id for subscription in subscriptions}
     users = session.exec(select(User).where(User.id.in_(user_ids))).all()
@@ -35,6 +38,7 @@ def trigger_immediate_alerts(event: Event, session: Session) -> None:
 
     settings = get_settings()
     subject = f"Nouvel événement : {event.titre}"
+    emailed: set[int] = set()
     for user_id in user_ids:
         user = users_by_id.get(user_id)
         if user is None:
@@ -45,6 +49,8 @@ def trigger_immediate_alerts(event: Event, session: Session) -> None:
             f'<p><a href="{settings.site_url}/events/{event.id}">Voir l\'événement</a></p>'
         )
         send_email(user.email, subject, html)
+        emailed.add(user_id)
+    return emailed
 
 
 def send_digest_for_day(
