@@ -704,3 +704,28 @@ def test_backoffice_views_count_forbidden_for_lecteur(client, lecteur_token):
         "/backoffice/events", headers={"Authorization": f"Bearer {lecteur_token}"}
     )
     assert response.status_code == 403
+
+
+def test_list_events_free_filter(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    ids = {}
+    for name, extra in {
+        "free": {"prix_min": 0},
+        "paid": {"prix_min": 5},
+        "range": {"prix_min": 0, "prix_max": 10},
+        "unknown": {},
+    }.items():
+        created = client.post(
+            "/backoffice/events",
+            json={"source_url": f"https://example.com/free-{name}", "titre": name,
+                  "date": "2030-01-01T10:00:00", **extra},
+            headers=headers,
+        ).json()
+        assert client.post(f"/backoffice/events/{created['id']}/publish", headers=headers).status_code == 200
+        ids[name] = created["id"]
+
+    everything = {e["id"] for e in client.get("/events?page_size=100").json()["items"]}
+    assert set(ids.values()) <= everything
+
+    free = {e["id"] for e in client.get("/events?free=true&page_size=100").json()["items"]}
+    assert free == {ids["free"]}

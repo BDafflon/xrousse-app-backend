@@ -57,6 +57,7 @@ def list_events(
     month: int | None = Query(default=None, ge=1, le=12),
     year: int | None = Query(default=None),
     tag: list[str] | None = Query(default=None),
+    free: bool = Query(default=False),
     sort: str = Query(default="date"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -65,6 +66,10 @@ def list_events(
     query = select(Event).where(
         Event.statut == EventStatus.publie, Event.is_deleted == False  # noqa: E712
     )
+
+    if free:
+        # Free = explicitly priced 0 (a "0 to 10" range is not free).
+        query = query.where(Event.prix_min == 0, Event.prix_max.is_(None))
 
     if tag:
         query = (
