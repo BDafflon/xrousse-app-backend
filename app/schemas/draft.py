@@ -1,4 +1,4 @@
-from pydantic import BaseModel, NaiveDatetime
+from pydantic import BaseModel, Field, NaiveDatetime
 
 
 class DraftUpsertIn(BaseModel):
@@ -29,3 +29,9 @@ class DraftDateIn(BaseModel):
 
 class DraftDateFinIn(BaseModel):
     date_fin: NaiveDatetime | None = None
+
+
+class DraftPrixIn(BaseModel):
+    # Single price = prix_min only; range = both; None/None clears the price.
+    prix_min: float | None = Field(default=None, ge=0)
+    prix_max: float | None = Field(default=None, ge=0)

@@ -170,3 +170,24 @@ def test_patch_date_404(client, redacteur_token):
     headers = {"Authorization": f"Bearer {redacteur_token}"}
     response = client.patch("/drafts/9999/date", json={"date": "2026-11-15T19:00:00"}, headers=headers)
     assert response.status_code == 404
+
+
+def test_patch_draft_prix_single_range_clear_and_invalid(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    draft = client.post("/drafts/upsert", json={"source_url": "https://example.com/prix"}, headers=headers).json()
+    url = f"/drafts/{draft['id']}/prix"
+
+    r = client.patch(url, json={"prix_min": 12}, headers=headers)
+    assert r.status_code == 200
+    assert (r.json()["prix_min"], r.json()["prix_max"]) == (12, None)
+
+    r = client.patch(url, json={"prix_min": 5, "prix_max": 10}, headers=headers)
+    assert (r.json()["prix_min"], r.json()["prix_max"]) == (5, 10)
+
+    assert client.patch(url, json={"prix_min": 10, "prix_max": 5}, headers=headers).status_code == 422
+    assert client.patch(url, json={"prix_max": 5}, headers=headers).status_code == 422
+    assert client.patch(url, json={"prix_min": -3}, headers=headers).status_code == 422
+
+    r = client.patch(url, json={"prix_min": None, "prix_max": None}, headers=headers)
+    assert (r.json()["prix_min"], r.json()["prix_max"]) == (None, None)
+    assert client.patch("/drafts/9999/prix", json={"prix_min": 1}, headers=headers).status_code == 404

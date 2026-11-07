@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, NaiveDatetime, model_validator
+from pydantic import BaseModel, Field, NaiveDatetime, model_validator
 from pydantic_core import InitErrorDetails, ValidationError
 
 from app.models.event import EventStatus, EventVisibility
@@ -86,6 +86,16 @@ def _validate_event_dates(
             )
 
 
+def _validate_event_prix(prix_min: float | None, prix_max: float | None) -> None:
+    """prix_max requires prix_min and must be >= prix_min. Also run against
+    the MERGED state by the PATCH routes."""
+    if prix_max is not None:
+        if prix_min is None:
+            raise EventDateError("prix_max", "prix_max cannot be set without prix_min")
+        if prix_max < prix_min:
+            raise EventDateError("prix_max", "prix_max must be >= prix_min")
+
+
 def _raise_as_field_error(model_name: str, exc: EventDateError) -> None:
     """Re-raise an EventDateError as a pydantic ValidationError whose `loc`
     ends in exc.field, instead of the whole-model loc that
@@ -120,6 +130,8 @@ class EventCreate(BaseModel):
     recurrence_jours: str | None = None
     recurrence_fin: NaiveDatetime | None = None
     lieu: str | None = None
+    prix_min: float | None = Field(default=None, ge=0)
+    prix_max: float | None = Field(default=None, ge=0)
     image_url: str | None = None
     tag_ids: list[int] = []
     is_permanent: bool = False
@@ -127,6 +139,7 @@ class EventCreate(BaseModel):
     @model_validator(mode="after")
     def _validate_dates(self) -> "EventCreate":
         try:
+            _validate_event_prix(self.prix_min, self.prix_max)
             _validate_event_dates(
                 self.date,
                 self.date_fin,
@@ -147,6 +160,8 @@ class EventUpdate(BaseModel):
     recurrence_jours: str | None = None
     recurrence_fin: NaiveDatetime | None = None
     lieu: str | None = None
+    prix_min: float | None = Field(default=None, ge=0)
+    prix_max: float | None = Field(default=None, ge=0)
     image_url: str | None = None
     tag_ids: list[int] | None = None
     is_permanent: bool | None = None
@@ -167,6 +182,7 @@ class EventUpdate(BaseModel):
         # events_backoffice.update_event, which re-validates after applying
         # the payload to the actual stored event.
         try:
+            _validate_event_prix(self.prix_min, self.prix_max)
             _validate_event_dates(
                 self.date,
                 self.date_fin,
@@ -189,6 +205,8 @@ class EventOut(BaseModel):
     recurrence_jours: str | None
     recurrence_fin: datetime | None
     lieu: str | None
+    prix_min: float | None
+    prix_max: float | None
     image_url: str | None
     statut: EventStatus
     created_by_id: int
@@ -232,6 +250,8 @@ class UserEventCreate(BaseModel):
     recurrence_jours: str | None = None
     recurrence_fin: NaiveDatetime | None = None
     lieu: str | None = None
+    prix_min: float | None = Field(default=None, ge=0)
+    prix_max: float | None = Field(default=None, ge=0)
     image_url: str | None = None
     tag_ids: list[int] = []
     is_permanent: bool = False
@@ -240,6 +260,7 @@ class UserEventCreate(BaseModel):
     @model_validator(mode="after")
     def _validate_dates(self) -> "UserEventCreate":
         try:
+            _validate_event_prix(self.prix_min, self.prix_max)
             _validate_event_dates(
                 self.date,
                 self.date_fin,

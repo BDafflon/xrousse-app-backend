@@ -10,11 +10,12 @@ from app.schemas.draft import (
     DraftDateFinIn,
     DraftDateIn,
     DraftImageIn,
+    DraftPrixIn,
     DraftSourceIn,
     DraftTitleIn,
     DraftUpsertIn,
 )
-from app.schemas.event import EventOut, _validate_event_dates
+from app.schemas.event import EventOut, _validate_event_dates, _validate_event_prix
 
 router = APIRouter(
     prefix="/drafts",
@@ -179,6 +180,25 @@ def patch_draft_date_fin(
     event = _get_draft_or_404(draft_id, session)
     event.date_fin = data.date_fin
     _revalidate_dates(event)
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
+
+
+@router.patch("/{draft_id}/prix", response_model=EventOut)
+def patch_draft_prix(
+    draft_id: int,
+    data: DraftPrixIn,
+    session: Session = Depends(get_session),
+) -> Event:
+    event = _get_draft_or_404(draft_id, session)
+    try:
+        _validate_event_prix(data.prix_min, data.prix_max)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    event.prix_min = data.prix_min
+    event.prix_max = data.prix_max
     session.add(event)
     session.commit()
     session.refresh(event)

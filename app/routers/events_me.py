@@ -17,6 +17,7 @@ from app.schemas.event import (
     UserEventCreate,
     UserEventUpdate,
     _validate_event_dates,
+    _validate_event_prix,
 )
 from app.models.notification import NotificationType
 from app.services.events import delete_event_cascade
@@ -178,6 +179,8 @@ def create_my_event(
         recurrence_jours=data.recurrence_jours,
         recurrence_fin=data.recurrence_fin,
         lieu=data.lieu,
+        prix_min=data.prix_min,
+        prix_max=data.prix_max,
         image_url=data.image_url,
         is_permanent=data.is_permanent,
         visibilite=data.visibilite,
@@ -215,6 +218,7 @@ def update_my_event(
         event.tags = _resolve_tags(data.tag_ids, session)
 
     try:
+        _validate_event_prix(event.prix_min, event.prix_max)
         _validate_event_dates(
             event.date,
             event.date_fin,

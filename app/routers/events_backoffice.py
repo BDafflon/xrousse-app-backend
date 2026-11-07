@@ -8,7 +8,7 @@ from app.db import get_session
 from app.models.event import Event, EventStatus, EventVisibility
 from app.models.tag import Tag
 from app.models.user import Role, User
-from app.schemas.event import BackofficeEventOut, EventCreate, EventOut, EventUpdate, _validate_event_dates
+from app.schemas.event import BackofficeEventOut, EventCreate, EventOut, EventUpdate, _validate_event_dates, _validate_event_prix
 from app.services.alerts import trigger_immediate_alerts
 from app.services.notifications import notify_new_event
 
@@ -82,6 +82,8 @@ def create_event(
         recurrence_jours=data.recurrence_jours,
         recurrence_fin=data.recurrence_fin,
         lieu=data.lieu,
+        prix_min=data.prix_min,
+        prix_max=data.prix_max,
         image_url=data.image_url,
         is_permanent=data.is_permanent,
         created_by_id=current_user.id,
@@ -115,6 +117,7 @@ def update_event(
     # `PATCH {"date": "..."}` pushing `date` past an already-stored
     # `date_fin`, or past an already-stored `recurrence_jours`.
     try:
+        _validate_event_prix(event.prix_min, event.prix_max)
         _validate_event_dates(
             event.date,
             event.date_fin,

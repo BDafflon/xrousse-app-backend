@@ -52,6 +52,10 @@ class Event(SQLModel, table=True):
     recurrence_jours: str | None = Field(default=None)
     recurrence_fin: NaiveDatetime | None = Field(default=None)
     lieu: str | None = Field(default=None)
+    # Price in euros. prix_min alone = single price, with prix_max = range
+    # "min to max". None = not specified, 0 = free.
+    prix_min: float | None = Field(default=None, ge=0)
+    prix_max: float | None = Field(default=None, ge=0)
     image_url: str | None = Field(default=None)
     statut: EventStatus = Field(default=EventStatus.brouillon)
     created_by_id: int = Field(foreign_key="user.id")

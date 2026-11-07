@@ -507,3 +507,33 @@ def test_patch_merged_state_rejects_recurrence_plus_multi_day_range(
         headers=headers,
     )
     assert response.status_code == 422
+
+
+def test_event_prix_range_create_update_and_validation(client, redacteur_token):
+    headers = {"Authorization": f"Bearer {redacteur_token}"}
+    resp = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/prix", "prix_min": 10, "prix_max": 25},
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    assert (resp.json()["prix_min"], resp.json()["prix_max"]) == (10, 25)
+    event_id = resp.json()["id"]
+    url = f"/backoffice/events/{event_id}"
+
+    # merged-state check: lowering nothing but raising min above stored max
+    assert client.patch(url, json={"prix_min": 30}, headers=headers).status_code == 422
+    assert client.patch(url, json={"prix_min": -1}, headers=headers).status_code == 422
+    assert client.patch(url, json={"prix_min": 20, "prix_max": 10}, headers=headers).status_code == 422
+
+    resp = client.patch(url, json={"prix_min": 0, "prix_max": None}, headers=headers)
+    assert resp.status_code == 200
+    assert (resp.json()["prix_min"], resp.json()["prix_max"]) == (0, None)
+
+    # max without min is rejected
+    resp = client.post(
+        "/backoffice/events",
+        json={"source_url": "https://example.com/prix2", "prix_max": 5},
+        headers=headers,
+    )
+    assert resp.status_code == 422
